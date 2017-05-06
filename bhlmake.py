@@ -29,7 +29,7 @@ import hashlib
 import argparse
 from time import time
 
-PROGRAM_VER = "0.4a"
+PROGRAM_VER = "0.4.5a"
 BHL_VER = 1
 
 def get_cmdline():
@@ -87,10 +87,19 @@ def main():
 
     #write header
     fout.write(b"Block Hash Locator\x1a")
-    fout.write(BHL_VER.to_bytes(1, byteorder='big', signed=False))
+    fout.write(bytes([BHL_VER]))
     fout.write(blocksize.to_bytes(4, byteorder='big', signed=False))
     fout.write(filesize.to_bytes(8, byteorder='big', signed=False))
 
+    #write metadata
+    metadata = b""
+    bb = os.path.split(filename)[1].encode()
+    bb = b"FNM" + bytes([len(bb)]) + bb
+    metadata += bb
+
+    metadata = (b"META" + len(metadata).to_bytes(4, byteorder='big') +
+                metadata)
+    fout.write(metadata)
 
     #read blocks and calc hashes
     blocksnum = 0
