@@ -39,7 +39,7 @@ def get_cmdline():
              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
              prefix_chars='-+')
     parser.add_argument("-v", "--version", action='version', 
-                        version='Block Hash Locater ' +
+                        version='Block Hash Locator ' +
                         'Maker v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
     parser.add_argument("filename", action="store", 
                         help="file to encode")
