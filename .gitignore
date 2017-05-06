@@ -1,0 +1,7 @@
+misc_tools/
+*.pyc
+*.zip
+*.dat
+*.bhl
+*.db3
+note.txt
