@@ -29,9 +29,10 @@ import hashlib
 import argparse
 from time import time
 
-PROGRAM_VER = "0.3a"
+PROGRAM_VER = "0.3.5a"
 BHL_VER = 1
 BHL_MAGIC = b"Block Hash Locator\x1a"
+BHL_META = b"META"
 
 def get_cmdline():
     """Evaluate command line parameters, usage & help."""
@@ -62,6 +63,11 @@ def errexit(errlev=1, mess=""):
     sys.exit(errlev)
     
 
+def metadataDecode(metablock):
+    """Decode metadata"""
+    return {}
+
+
 def main():
 
     cmdline = get_cmdline()
@@ -89,9 +95,14 @@ def main():
     bhlver = ord(fin.read(1))
     blocksize = int.from_bytes(fin.read(4), byteorder='big')
     filesize = int.from_bytes(fin.read(8), byteorder='big')
-
     lastblocksize = filesize % blocksize
     totblocksnum = (filesize + blocksize-1) // blocksize
+
+    #parse metadata section
+    if BHL_META != fin.read(4):
+        errexit(1, "Missing META section")
+    metasize = int.from_bytes(fin.read(4), byteorder='big')
+    metadata = metadataDecode(fin.read(metasize))
 
     for block in range(totblocksnum):
         digest = fin.read(32)
