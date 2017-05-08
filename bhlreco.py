@@ -47,8 +47,8 @@ def get_cmdline():
                         help="image/volume to scan")
     parser.add_argument("bhlfilename", action="store", 
                         help="BHL file")
-    parser.add_argument("filename", action="store", 
-                        help="file to recover")
+    parser.add_argument("filename", action="store", nargs='?', 
+                        help="target/to recover file")
     parser.add_argument("-o", "--overwrite", action="store_true", default=False,
                         help="overwrite existing file")
     res = parser.parse_args()
@@ -63,9 +63,20 @@ def errexit(errlev=1, mess=""):
     sys.exit(errlev)
     
 
-def metadataDecode(metablock):
+def metadataDecode(data):
     """Decode metadata"""
-    return {}
+    metadata = {}
+    p = 0
+    while p < (len(data)-3):
+        metaid = data[p:p+3]
+        p+=3
+        metalen = data[p]
+        metabb = data[p+1:p+1+metalen]
+        p = p + 1 + metalen    
+        if metaid == b'FNM':
+            metadata["filename"] = metabb.decode('utf-8')
+    
+    return metadata
 
 
 def main():
@@ -77,9 +88,6 @@ def main():
         errexit(1, "image file/volume '%s' not found" % (imgfilename))
 
     filename = cmdline.filename
-    if os.path.exists(filename) and not cmdline.overwrite:
-        errexit(1, "file '%s' already exists!" % (filename))
-
     bhlfilename = cmdline.bhlfilename
     if not os.path.exists(bhlfilename):
         errexit(1, "BHL file '%s' not found" % (bhlfilename))
@@ -103,6 +111,21 @@ def main():
         errexit(1, "Missing META section")
     metasize = int.from_bytes(fin.read(4), byteorder='big')
     metadata = metadataDecode(fin.read(metasize))
+
+    #evaluate target filename
+    if not filename:
+        if "filename" in metadata:
+            filename = metadata["filename"]
+        else:
+            filename = os.path.split(sbxfilename)[1] + ".out"
+    elif os.path.isdir(filename):
+        if "filename" in metadata:
+            filename = os.path.join(filename, metadata["filename"])
+        else:
+            filename = os.path.join(filename,
+                                    os.path.split(sbxfilename)[1] + ".out")
+    if os.path.exists(filename) and not cmdline.overwrite:
+        errexit(1, "target file '%s' already exists!" % (filename))
 
     for block in range(totblocksnum):
         digest = fin.read(32)
