@@ -21,17 +21,17 @@ Hash: SHA-256
 
 | pos | to pos | size | desc                              |
 |---- | ---    | ---- | --------------------------------- |
-|  0  |     11 |  12  | Signature = 'BlockHashLoc' + 0x1a |
-| 12  |     12 |   1  | Version byte                      |
-| 13  |     16 |   4  | Block size                        |
-| 17  |     24 |   8  | File size                         |
+|  0  |     12 |  13  | Signature = 'BlockHashLoc' + 0x1a |
+| 13  |     13 |   1  | Version byte                      |
+| 14  |     16 |   4  | Block size                        |
+| 18  |     24 |   8  | File size                         |
 
 ### Metadata
 
 | pos | to pos | size | desc                  |
 |---- | ------ | ---- | --------------------- |
-| 25  |     28 |   4  | Metadata section size |
-| 29  |    var |  var | Encoded metadata list |
+| 26  |     28 |   4  | Metadata section size |
+| 30  |    var |  var | Encoded metadata list |
 
 ### Hash
 

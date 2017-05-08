@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 #--------------------------------------------------------------------------
-# BHLReco - Block Hash Locator recover
+# BHLReco - BlockHashLoc Recover
 #
 # Created: 06/05/2017
 #
@@ -29,10 +29,9 @@ import hashlib
 import argparse
 from time import time
 
-PROGRAM_VER = "0.3.5a"
+PROGRAM_VER = "0.5.0a"
 BHL_VER = 1
-BHL_MAGIC = b"Block Hash Locator\x1a"
-BHL_META = b"META"
+BHL_MAGIC = b"BlockHashLoc\x1a"
 
 def get_cmdline():
     """Evaluate command line parameters, usage & help."""
@@ -41,7 +40,7 @@ def get_cmdline():
              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
              prefix_chars='-+')
     parser.add_argument("-v", "--version", action='version', 
-                        version='Block Hash Locator ' +
+                        version='BlockHashLoc ' +
                         'Recover v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
     parser.add_argument("imgfilename", action="store", 
                         help="image/volume to scan")
@@ -75,7 +74,6 @@ def metadataDecode(data):
         p = p + 1 + metalen    
         if metaid == b'FNM':
             metadata["filename"] = metabb.decode('utf-8')
-    
     return metadata
 
 
@@ -97,7 +95,7 @@ def main():
     blocklist = {}
     print("Reading BHL file '%s'..." % bhlfilename)
     fin = open(bhlfilename, "rb", buffering=1024*1024)
-    if BHL_MAGIC != fin.read(19):
+    if BHL_MAGIC != fin.read(13):
         errexit(1, "Not a valid BHL file")
     #check ver
     bhlver = ord(fin.read(1))
@@ -107,8 +105,6 @@ def main():
     totblocksnum = (filesize + blocksize-1) // blocksize
 
     #parse metadata section
-    if BHL_META != fin.read(4):
-        errexit(1, "Missing META section")
     metasize = int.from_bytes(fin.read(4), byteorder='big')
     metadata = metadataDecode(fin.read(metasize))
 
@@ -127,17 +123,25 @@ def main():
     if os.path.exists(filename) and not cmdline.overwrite:
         errexit(1, "target file '%s' already exists!" % (filename))
 
+    globalhash = hashlib.sha256()
     for block in range(totblocksnum):
         digest = fin.read(32)
+        globalhash.update(digest)
         if digest in blocklist:
             blocklist[digest].append(block)
         else:
             blocklist[digest] = [block]
 
-    #start scanning...
+    #verify the hashes read
+    digest = fin.read(32)
+    if globalhash.digest() != digest:
+        errexit(1, "hash block corrupt!")
+
+    #start scanning and recovering process...
     print("scanning file '%s'..." % imgfilename)
     fin = open(imgfilename, "rb", buffering=1024*1024)
     print("creating file '%s'..." % filename)
+    open(filename, 'w').close()
     fout = open(filename, "wb")
 
     updatetime = time() - 1
@@ -146,32 +150,32 @@ def main():
     blocksfound = 0
     while True:
         buffer = fin.read(blocksize)
-        if len(buffer) < blocksize:
-            break
-        blockhash = hashlib.sha256()
-        blockhash.update(buffer)
-        digest = blockhash.digest()
-        if digest in blocklist:
-            for blocknum in blocklist[digest]:
-                if blocknum not in wrotelist:
-                    fout.seek(blocknum*blocksize)
-                    fout.write(buffer)
-                    wrotelist[blocknum] = 1
-                    blocksfound += 1
-        else:
+        if len(buffer) >= lastblocksize:
             blockhash = hashlib.sha256()
-            blockhash.update(buffer[:lastblocksize])
+            blockhash.update(buffer)
             digest = blockhash.digest()
             if digest in blocklist:
                 for blocknum in blocklist[digest]:
                     if blocknum not in wrotelist:
                         fout.seek(blocknum*blocksize)
-                        fout.write(buffer[:lastblocksize])
+                        fout.write(buffer)
                         wrotelist[blocknum] = 1
                         blocksfound += 1
+            else:
+                blockhash = hashlib.sha256()
+                blockhash.update(buffer[:lastblocksize])
+                digest = blockhash.digest()
+                if digest in blocklist:
+                    for blocknum in blocklist[digest]:
+                        if blocknum not in wrotelist:
+                            fout.seek(blocknum*blocksize)
+                            fout.write(buffer[:lastblocksize])
+                            wrotelist[blocknum] = 1
+                            blocksfound += 1
 
         #status update
-        if (time() > updatetime):
+        if ((time() > updatetime) or (totblocksnum == blocksfound) or
+            (len(buffer) < lastblocksize)):
             pos = fin.tell()
             etime = (time()-starttime)
             if etime == 0:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 #--------------------------------------------------------------------------
-# BHLMake - Block Hash Locator maker
+# BHLMake - BlockHashLoc Maker
 #
 # Created: 04/05/2017
 #
@@ -29,7 +29,7 @@ import hashlib
 import argparse
 from time import time
 
-PROGRAM_VER = "0.4.5a"
+PROGRAM_VER = "0.5.0a"
 BHL_VER = 1
 
 def get_cmdline():
@@ -39,7 +39,7 @@ def get_cmdline():
              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
              prefix_chars='-+')
     parser.add_argument("-v", "--version", action='version', 
-                        version='Block Hash Locator ' +
+                        version='BlockHashLoc ' +
                         'Maker v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
     parser.add_argument("filename", action="store", 
                         help="file to encode")
@@ -83,10 +83,11 @@ def main():
 
     fin = open(filename, "rb", buffering=1024*1024)
     print("creating file '%s'..." % bhlfilename)
+    open(bhlfilename, 'w').close()
     fout = open(bhlfilename, "wb", buffering=1024*1024)
 
     #write header
-    fout.write(b"Block Hash Locator\x1a")
+    fout.write(b"BlockHashLoc\x1a")
     fout.write(bytes([BHL_VER]))
     fout.write(blocksize.to_bytes(4, byteorder='big', signed=False))
     fout.write(filesize.to_bytes(8, byteorder='big', signed=False))
@@ -97,11 +98,11 @@ def main():
     bb = b"FNM" + bytes([len(bb)]) + bb
     metadata += bb
 
-    metadata = (b"META" + len(metadata).to_bytes(4, byteorder='big') +
-                metadata)
+    metadata = len(metadata).to_bytes(4, byteorder='big') + metadata
     fout.write(metadata)
 
     #read blocks and calc hashes
+    globalhash = hashlib.sha256()
     blocksnum = 0
     ticks = 0
     updatetime = time() 
@@ -112,7 +113,9 @@ def main():
                 break
         blockhash = hashlib.sha256()
         blockhash.update(buffer)
-        fout.write(blockhash.digest())
+        digest = blockhash.digest()
+        globalhash.update(digest)
+        fout.write(digest)
         blocksnum += 1
 
         #some progress update
@@ -121,6 +124,7 @@ def main():
                   end="\r", flush=True)
             updatetime = time() + .1
         
+    fout.write(globalhash.digest())
     print("100%  ")
     fin.close()
     fout.close()
