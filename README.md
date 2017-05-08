@@ -1,5 +1,24 @@
 # BlockHashLoc
 
+
+(to be completed...)
+
+tl;dr
+
+ - BHLMake: create a BHL with a list of one hash for every block of a given file
+ - BHLReco: scan a disk image/volume for blocks with the hashes from the BHL file to rebuild the original one
+
+With adequately sized blocks (512 bytes, 4KB, etc. depending on the media and file system), this let one recover a file regardless of the FS used, or the FS integrity, or the fragmentation level.
+
+This project is related to [SeqBox](https://github.com/MarcoPon/SeqBox). The differences are:
+
+- SeqBox create a stand-alone file container with the above listed recovery characteristics.
+ 
+- BHL realize the same effect with a parallel (small) file, that can be stored separately (in other media, or in the cloud), or along the original as a SeqBox file (so that it can be recovered too, as the first step).
+
+**N.B.**
+Currently the two tools works on one file at the time, but that will obviously change. They are already functional, but it's still a work in progress...
+
 ***
 
 ## Tech spec
@@ -66,8 +85,14 @@ Currently the only version is 1.
 
 ## Links
 
- - [BlockHashLoc home page](http://mark0.net/soft-blockhashloc-e.html)
+ - [BlockHashLoc home page](http://mark0.net/)
  - [BlockHashLoc GitHub repository](https://github.com/MarcoPon/BlockHashLoc)
+
+## Credits
+
+The idea of collecting & scanning for block hashes was something I had considered while developing [SeqBox](https://github.com/MarcoPon/SeqBox), then settling on using a stand alone file container instead of the original file plus a parallel one.
+
+Then the concept resurfaced during a nice discussion on Slashdot with user JoeyRoxx, and after some considerations I decided to put some work on that too, seeing how the two approaches could both be useful (in different situations) and even complement each other nicely.
 
 ## Contacts
 
