@@ -27,9 +27,9 @@ import os
 import sys
 import hashlib
 import argparse
-from time import time
+import time
 
-PROGRAM_VER = "0.5.0a"
+PROGRAM_VER = "0.5.2a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -74,6 +74,9 @@ def metadataDecode(data):
         p = p + 1 + metalen    
         if metaid == b'FNM':
             metadata["filename"] = metabb.decode('utf-8')
+        elif metaid == b'FDT':
+            metadata["filedatetime"] = int.from_bytes(metabb, byteorder='big')
+
     return metadata
 
 
@@ -144,8 +147,8 @@ def main():
     open(filename, 'w').close()
     fout = open(filename, "wb")
 
-    updatetime = time() - 1
-    starttime = time()
+    updatetime = time.time() - 1
+    starttime = time.time()
     wrotelist = {}
     blocksfound = 0
     while True:
@@ -173,23 +176,27 @@ def main():
                             wrotelist[blocknum] = 1
                             blocksfound += 1
 
-        #status update
-        if ((time() > updatetime) or (totblocksnum == blocksfound) or
-            (len(buffer) < lastblocksize)):
-            pos = fin.tell()
-            etime = (time()-starttime)
-            if etime == 0:
-                etime = 1
-            print("pos: %i - tot: %i - found: %i - %.2fMB/s" %
-                  (pos, totblocksnum, blocksfound, pos/(1024*1024)/etime),
-                  end = "\r", flush=True)
-            updatetime = time() + .2
+            #status update
+            if ((time.time() > updatetime) or (totblocksnum == blocksfound) or
+                (len(buffer) < lastblocksize)):
+                pos = fin.tell()
+                etime = (time.time()-starttime)
+                if etime == 0:
+                    etime = 1
+                print("pos: %i - tot: %i - found: %i - %.2fMB/s" %
+                      (pos, totblocksnum, blocksfound, pos/(1024*1024)/etime),
+                      end = "\r", flush=True)
+                updatetime = time.time() + .2
 
-            if totblocksnum == blocksfound:
-               break
+        else:
+            break
     
     fout.close()
     fin.close()
+    if "filedatetime" in metadata:
+        os.utime(filename,
+                 (int(time.time()), metadata["filedatetime"]))
+    print("\nrecovery completed.")
 
 
 if __name__ == '__main__':

@@ -29,7 +29,7 @@ import hashlib
 import argparse
 from time import time
 
-PROGRAM_VER = "0.5.0a"
+PROGRAM_VER = "0.5.2a"
 BHL_VER = 1
 
 def get_cmdline():
@@ -96,6 +96,9 @@ def main():
     metadata = b""
     bb = os.path.split(filename)[1].encode()
     bb = b"FNM" + bytes([len(bb)]) + bb
+    metadata += bb
+    bb = int(os.path.getmtime(filename)).to_bytes(8, byteorder='big')
+    bb = b"FDT" + bytes([len(bb)]) + bb
     metadata += bb
 
     metadata = len(metadata).to_bytes(4, byteorder='big') + metadata
