@@ -78,7 +78,8 @@ Currently the only version is 1.
 
 | ID | Desc |
 | --- | --- |
-| FNM | filename (utf-8) |
+| FNM | filename (utf-8)                           |
+| FDT | date & time (8 bytes, seconds since epoch) |
 
 (others IDs may be added...)
 
