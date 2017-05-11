@@ -29,7 +29,7 @@ import hashlib
 import argparse
 import time
 
-PROGRAM_VER = "0.5.2a"
+PROGRAM_VER = "0.5.3a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -87,6 +87,7 @@ def main():
     imgfilename = cmdline.imgfilename
     if not os.path.exists(imgfilename):
         errexit(1, "image file/volume '%s' not found" % (imgfilename))
+    imgfilesize = os.path.getsize(imgfilename)
 
     filename = cmdline.filename
     bhlfilename = cmdline.bhlfilename
@@ -153,7 +154,7 @@ def main():
     blocksfound = 0
     while True:
         buffer = fin.read(blocksize)
-        if len(buffer) >= lastblocksize:
+        if len(buffer) > 0:
             blockhash = hashlib.sha256()
             blockhash.update(buffer)
             digest = blockhash.digest()
@@ -177,15 +178,15 @@ def main():
                             blocksfound += 1
 
             #status update
+            pos = fin.tell()
             if ((time.time() > updatetime) or (totblocksnum == blocksfound) or
-                (len(buffer) < lastblocksize)):
-                pos = fin.tell()
+                (pos == imgfilesize)):
                 etime = (time.time()-starttime)
                 if etime == 0:
-                    etime = 1
-                print("pos: %i - tot: %i - found: %i - %.2fMB/s" %
-                      (pos, totblocksnum, blocksfound, pos/(1024*1024)/etime),
-                      end = "\r", flush=True)
+                    etime = .1
+                print("  %.1f%% - tot: %i - found: %i - %.2fMB/s" %
+                      (pos*100/imgfilesize, totblocksnum, blocksfound,
+                       pos/(1024*1024)/etime), end = "\r", flush=True)
                 updatetime = time.time() + .2
 
         else:
