@@ -29,7 +29,7 @@ import hashlib
 import argparse
 import time
 
-PROGRAM_VER = "0.5.3a"
+PROGRAM_VER = "0.5.5a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -50,6 +50,8 @@ def get_cmdline():
                         help="target/to recover file")
     parser.add_argument("-o", "--overwrite", action="store_true", default=False,
                         help="overwrite existing file")
+    parser.add_argument("-st", "--step", type=int, default=0,
+                        help=("scan step"), metavar="n")
     res = parser.parse_args()
     return res
 
@@ -76,7 +78,6 @@ def metadataDecode(data):
             metadata["filename"] = metabb.decode('utf-8')
         elif metaid == b'FDT':
             metadata["filedatetime"] = int.from_bytes(metabb, byteorder='big')
-
     return metadata
 
 
@@ -141,6 +142,10 @@ def main():
     if globalhash.digest() != digest:
         errexit(1, "hash block corrupt!")
 
+    scanstep = cmdline.step
+    if scanstep == 0:
+        scanstep = blocksize
+
     #start scanning and recovering process...
     print("scanning file '%s'..." % imgfilename)
     fin = open(imgfilename, "rb", buffering=1024*1024)
@@ -152,7 +157,8 @@ def main():
     starttime = time.time()
     wrotelist = {}
     blocksfound = 0
-    while True:
+    for pos in range(0, imgfilesize, scanstep):
+        fin.seek(pos, 0)
         buffer = fin.read(blocksize)
         if len(buffer) > 0:
             blockhash = hashlib.sha256()
@@ -178,20 +184,20 @@ def main():
                             blocksfound += 1
 
             #status update
-            pos = fin.tell()
             if ((time.time() > updatetime) or (totblocksnum == blocksfound) or
-                (pos == imgfilesize)):
+                (imgfilesize-pos-len(buffer) == 0) ):
                 etime = (time.time()-starttime)
                 if etime == 0:
-                    etime = .1
+                    etime = .001
                 print("  %.1f%% - tot: %i - found: %i - %.2fMB/s" %
-                      (pos*100/imgfilesize, totblocksnum, blocksfound,
-                       pos/(1024*1024)/etime), end = "\r", flush=True)
+                      ((pos+len(buffer)-1)*100/imgfilesize,
+                       totblocksnum, blocksfound, pos/(1024*1024)/etime),
+                      end = "\r", flush=True)
                 updatetime = time.time() + .2
+                #break early if all the work is done
+                if totblocksnum == blocksfound:
+                    break
 
-        else:
-            break
-    
     fout.close()
     fin.close()
     if "filedatetime" in metadata:
