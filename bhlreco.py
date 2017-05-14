@@ -62,7 +62,23 @@ def errexit(errlev=1, mess=""):
         sys.stderr.write("%s: error: %s\n" %
                          (os.path.split(sys.argv[0])[1], mess))
     sys.exit(errlev)
-    
+
+
+def mcd(nums):
+    """MCD: step good for different blocksizes"""
+    res = min(nums)
+    while res > 0:
+        ok = 0
+        for n in nums:
+            if n % res != 0:
+                break
+            else:
+                ok += 1
+        if ok == len(nums):
+            break
+        res -= 1
+    return res if res > 0 else 1
+
 
 def metadataDecode(data):
     """Decode metadata"""
@@ -146,33 +162,30 @@ def main():
     if scanstep == 0:
         scanstep = blocksize
 
-    #start scanning and recovering process...
+    #start scanning process...
     print("scanning file '%s'..." % imgfilename)
     fin = open(imgfilename, "rb", buffering=1024*1024)
 
     updatetime = time.time() - 1
     starttime = time.time()
     writelist = {}
+
+    #this list need to include all block sizes + all last block sizes...
+    sizelist = [blocksize, lastblocksize]
+    
     for pos in range(0, imgfilesize, scanstep):
         fin.seek(pos, 0)
         buffer = fin.read(blocksize)
         if len(buffer) > 0:
-            blockhash = hashlib.sha256()
-            blockhash.update(buffer)
-            digest = blockhash.digest()
-            if digest in blocklist:
-                for blocknum in blocklist[digest]:
-                    if blocknum not in writelist:
-                        writelist[blocknum] = pos
-            else:
+            #need to check for all sizes
+            for size in sizelist:
                 blockhash = hashlib.sha256()
-                blockhash.update(buffer[:lastblocksize])
+                blockhash.update(buffer[:size])
                 digest = blockhash.digest()
                 if digest in blocklist:
                     for blocknum in blocklist[digest]:
                         if blocknum not in writelist:
                             writelist[blocknum] = pos
-                            lastblock = blocknum
 
             #status update
             blocksfound = len(writelist)
@@ -201,7 +214,7 @@ def main():
     buffersize = blocksize
     for blocknum in sorted(writelist):
         #todo: add missing blocks check...
-        if blocknum == lastblock:
+        if blocknum == (totblocksnum-1):
             buffersize = lastblocksize
         pos = writelist[blocknum]
         fin.seek(pos)
