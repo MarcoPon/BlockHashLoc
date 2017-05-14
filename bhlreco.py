@@ -29,7 +29,7 @@ import hashlib
 import argparse
 import time
 
-PROGRAM_VER = "0.5.5a"
+PROGRAM_VER = "0.6.0a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -149,14 +149,10 @@ def main():
     #start scanning and recovering process...
     print("scanning file '%s'..." % imgfilename)
     fin = open(imgfilename, "rb", buffering=1024*1024)
-    print("creating file '%s'..." % filename)
-    open(filename, 'w').close()
-    fout = open(filename, "wb")
 
     updatetime = time.time() - 1
     starttime = time.time()
-    wrotelist = {}
-    blocksfound = 0
+    writelist = {}
     for pos in range(0, imgfilesize, scanstep):
         fin.seek(pos, 0)
         buffer = fin.read(blocksize)
@@ -166,24 +162,20 @@ def main():
             digest = blockhash.digest()
             if digest in blocklist:
                 for blocknum in blocklist[digest]:
-                    if blocknum not in wrotelist:
-                        fout.seek(blocknum*blocksize)
-                        fout.write(buffer)
-                        wrotelist[blocknum] = 1
-                        blocksfound += 1
+                    if blocknum not in writelist:
+                        writelist[blocknum] = pos
             else:
                 blockhash = hashlib.sha256()
                 blockhash.update(buffer[:lastblocksize])
                 digest = blockhash.digest()
                 if digest in blocklist:
                     for blocknum in blocklist[digest]:
-                        if blocknum not in wrotelist:
-                            fout.seek(blocknum*blocksize)
-                            fout.write(buffer[:lastblocksize])
-                            wrotelist[blocknum] = 1
-                            blocksfound += 1
+                        if blocknum not in writelist:
+                            writelist[blocknum] = pos
+                            lastblock = blocknum
 
             #status update
+            blocksfound = len(writelist)
             if ((time.time() > updatetime) or (totblocksnum == blocksfound) or
                 (imgfilesize-pos-len(buffer) == 0) ):
                 etime = (time.time()-starttime)
@@ -198,12 +190,40 @@ def main():
                 if totblocksnum == blocksfound:
                     break
 
+    print("\nscan completed.")
+
+    #rebuild file
+    print("creating file '%s'..." % filename)
+    open(filename, 'w').close()
+    fout = open(filename, "wb")
+
+    filehash = hashlib.sha256()
+    buffersize = blocksize
+    for blocknum in sorted(writelist):
+        #todo: add missing blocks check...
+        if blocknum == lastblock:
+            buffersize = lastblocksize
+        pos = writelist[blocknum]
+        fin.seek(pos)
+        buffer = fin.read(buffersize)
+        fout.seek(blocknum*blocksize)
+        fout.write(buffer)
+        #hash check
+        blockhash = hashlib.sha256()
+        blockhash.update(buffer)
+        filehash.update(blockhash.digest())
+
     fout.close()
     fin.close()
+
     if "filedatetime" in metadata:
         os.utime(filename,
                  (int(time.time()), metadata["filedatetime"]))
-    print("\nrecovery completed.")
+
+    if filehash.digest() == globalhash.digest():
+        print("hash match!")
+    else:
+        errexit(1, "hash mismatch! decoded file corrupted!")
 
 
 if __name__ == '__main__':
