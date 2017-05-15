@@ -28,8 +28,9 @@ import sys
 import hashlib
 import argparse
 from time import time
+import zlib
 
-PROGRAM_VER = "0.5.2a"
+PROGRAM_VER = "0.6.1a"
 BHL_VER = 1
 
 def get_cmdline():
@@ -49,6 +50,8 @@ def get_cmdline():
                         help="overwrite existing file")
     parser.add_argument("-b", "--blocksize", type=int, default=512,
                         help="blocks size", metavar="n")
+    parser.add_argument("-nb", "--nolastblock", action="store_true", default=False,
+                        help="don't include actual last block")
     res = parser.parse_args()
     return res
 
@@ -109,11 +112,16 @@ def main():
     blocksnum = 0
     ticks = 0
     updatetime = time() 
+    bufferz = b""
     while True:
         buffer = fin.read(blocksize)
         if len(buffer) < blocksize:
             if len(buffer) == 0:
                 break
+            else:
+                #compressed blob with last block remainder
+                if cmdline.nolastblock == False:
+                    bufferz = zlib.compress(buffer, 9)
         blockhash = hashlib.sha256()
         blockhash.update(buffer)
         digest = blockhash.digest()
@@ -128,7 +136,9 @@ def main():
             updatetime = time() + .1
         
     fout.write(globalhash.digest())
-    print("100%  ")
+    if len(bufferz):
+        fout.write(bufferz)
+    
     fin.close()
     fout.close()
 
