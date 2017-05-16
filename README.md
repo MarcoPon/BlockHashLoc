@@ -29,11 +29,12 @@ Hash: SHA-256
 
 ### BHL file structure
 
-| section  | desc                          |
-| -------- | ----------------------------- |
-| Header   | Signature & version           |
-| Metadata | Misc info                     |
-| Hash     | Blocks hash list & final hash |
+| section    | desc                                 | note      |
+| ---------- | ------------------------------------ | --------- |
+| Header     | Signature & version                  |           |
+| Metadata   | Misc info                            |           |
+| Hash       | Blocks hash list & final hash        |           |
+| Last block | zlib compressed last block remainder | if needed |
 
 
 ### Header

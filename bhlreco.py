@@ -28,8 +28,9 @@ import sys
 import hashlib
 import argparse
 import time
+import zlib
 
-PROGRAM_VER = "0.6.0a"
+PROGRAM_VER = "0.6.1a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -110,7 +111,7 @@ def main():
     bhlfilename = cmdline.bhlfilename
     if not os.path.exists(bhlfilename):
         errexit(1, "BHL file '%s' not found" % (bhlfilename))
-    filesize = os.path.getsize(bhlfilename)
+    bhlfilesize = os.path.getsize(bhlfilename)
 
     #read hashes in memory
     blocklist = {}
@@ -144,6 +145,7 @@ def main():
     if os.path.exists(filename) and not cmdline.overwrite:
         errexit(1, "target file '%s' already exists!" % (filename))
 
+    #read all block hashes
     globalhash = hashlib.sha256()
     for block in range(totblocksnum):
         digest = fin.read(32)
@@ -152,11 +154,23 @@ def main():
             blocklist[digest].append(block)
         else:
             blocklist[digest] = [block]
+    lastblockdigest = digest
 
     #verify the hashes read
     digest = fin.read(32)
     if globalhash.digest() != digest:
-        errexit(1, "hash block corrupt!")
+        errexit(1, "hashes block corrupt!")
+
+    #read and check last blocks
+    if lastblocksize:
+        buffer = fin.read(bhlfilesize-fin.tell()+1)
+        lastblockbuffer = zlib.decompress(buffer)
+        blockhash = hashlib.sha256()
+        blockhash.update(lastblockbuffer)
+        if blockhash.digest() != lastblockdigest:
+            errexit(1, "last block corrupt!")
+    else:
+        lastblockbuffer = b""
 
     scanstep = cmdline.step
     if scanstep == 0:
@@ -170,8 +184,8 @@ def main():
     starttime = time.time()
     writelist = {}
 
-    #this list need to include all block sizes + all last block sizes...
-    sizelist = [blocksize, lastblocksize]
+    #this list need to include all block sizes...
+    sizelist = [blocksize]
     
     for pos in range(0, imgfilesize, scanstep):
         fin.seek(pos, 0)
@@ -211,19 +225,23 @@ def main():
     fout = open(filename, "wb")
 
     filehash = hashlib.sha256()
-    buffersize = blocksize
     for blocknum in sorted(writelist):
         #todo: add missing blocks check...
-        if blocknum == (totblocksnum-1):
-            buffersize = lastblocksize
         pos = writelist[blocknum]
         fin.seek(pos)
-        buffer = fin.read(buffersize)
+        buffer = fin.read(blocksize)
         fout.seek(blocknum*blocksize)
         fout.write(buffer)
         #hash check
         blockhash = hashlib.sha256()
         blockhash.update(buffer)
+        filehash.update(blockhash.digest())
+    if lastblocksize:
+        #fout.seek(0, os.SEEK_END)
+        fout.seek((totblocksnum-1)*blocksize)
+        fout.write(lastblockbuffer)
+        blockhash = hashlib.sha256()
+        blockhash.update(lastblockbuffer)
         filehash.update(blockhash.digest())
 
     fout.close()
