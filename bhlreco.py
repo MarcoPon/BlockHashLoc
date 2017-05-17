@@ -30,7 +30,7 @@ import argparse
 import time
 import zlib
 
-PROGRAM_VER = "0.6.1a"
+PROGRAM_VER = "0.7.0a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -43,14 +43,16 @@ def get_cmdline():
     parser.add_argument("-v", "--version", action='version', 
                         version='BlockHashLoc ' +
                         'Recover v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
-    parser.add_argument("imgfilename", action="store", 
-                        help="image/volume to scan")
-    parser.add_argument("bhlfilename", action="store", 
-                        help="BHL file")
-    parser.add_argument("filename", action="store", nargs='?', 
-                        help="target/to recover file")
-    parser.add_argument("-o", "--overwrite", action="store_true", default=False,
-                        help="overwrite existing file")
+    parser.add_argument("imgfilename", action="store", nargs="+",
+                        help="image(s)/volumes(s) to scan")
+    parser.add_argument("-db", "--database", action="store", dest="dbfilename",
+                        metavar="filename",
+                        help="temporary db with recovery info",
+                        default="bhlreco.db3")
+    parser.add_argument("-bhl", action="store", nargs="+", dest="bhlfilename", 
+                        help="BHL file(s)", metavar="filename")
+    parser.add_argument("-d", action="store", 
+                        help="destination path", default="", metavar="path")
     parser.add_argument("-st", "--step", type=int, default=0,
                         help=("scan step"), metavar="n")
     res = parser.parse_args()
@@ -102,75 +104,89 @@ def main():
 
     cmdline = get_cmdline()
 
-    imgfilename = cmdline.imgfilename
-    if not os.path.exists(imgfilename):
-        errexit(1, "image file/volume '%s' not found" % (imgfilename))
-    imgfilesize = os.path.getsize(imgfilename)
+    for bhlfilename in cmdline.bhlfilename:
+        if not os.path.exists(bhlfilename):
+            errexit(1, "BHL file '%s' not found" % (bhlfilename))
+        bhlfilesize = os.path.getsize(bhlfilename)
 
-    filename = cmdline.filename
-    bhlfilename = cmdline.bhlfilename
-    if not os.path.exists(bhlfilename):
-        errexit(1, "BHL file '%s' not found" % (bhlfilename))
-    bhlfilesize = os.path.getsize(bhlfilename)
+        #read hashes in memory
+        blocklist = {}
+        print("Reading BHL file '%s'..." % bhlfilename)
+        fin = open(bhlfilename, "rb", buffering=1024*1024)
+        if BHL_MAGIC != fin.read(13):
+            errexit(1, "Not a valid BHL file")
+        #check ver
+        bhlver = ord(fin.read(1))
+        blocksize = int.from_bytes(fin.read(4), byteorder='big')
+        filesize = int.from_bytes(fin.read(8), byteorder='big')
+        lastblocksize = filesize % blocksize
+        totblocksnum = (filesize + blocksize-1) // blocksize
 
-    #read hashes in memory
-    blocklist = {}
-    print("Reading BHL file '%s'..." % bhlfilename)
-    fin = open(bhlfilename, "rb", buffering=1024*1024)
-    if BHL_MAGIC != fin.read(13):
-        errexit(1, "Not a valid BHL file")
-    #check ver
-    bhlver = ord(fin.read(1))
-    blocksize = int.from_bytes(fin.read(4), byteorder='big')
-    filesize = int.from_bytes(fin.read(8), byteorder='big')
-    lastblocksize = filesize % blocksize
-    totblocksnum = (filesize + blocksize-1) // blocksize
+        #parse metadata section
+        metasize = int.from_bytes(fin.read(4), byteorder='big')
+        metadata = metadataDecode(fin.read(metasize))
 
-    #parse metadata section
-    metasize = int.from_bytes(fin.read(4), byteorder='big')
-    metadata = metadataDecode(fin.read(metasize))
+        #read all block hashes
+        globalhash = hashlib.sha256()
+        for block in range(totblocksnum):
+            digest = fin.read(32)
+            globalhash.update(digest)
+            if digest in blocklist:
+                blocklist[digest].append(block)
+            else:
+                blocklist[digest] = [block]
+        lastblockdigest = digest
 
-    #evaluate target filename
-    if not filename:
-        if "filename" in metadata:
-            filename = metadata["filename"]
-        else:
-            filename = os.path.split(sbxfilename)[1] + ".out"
-    elif os.path.isdir(filename):
-        if "filename" in metadata:
-            filename = os.path.join(filename, metadata["filename"])
-        else:
-            filename = os.path.join(filename,
-                                    os.path.split(sbxfilename)[1] + ".out")
-    if os.path.exists(filename) and not cmdline.overwrite:
-        errexit(1, "target file '%s' already exists!" % (filename))
-
-    #read all block hashes
-    globalhash = hashlib.sha256()
-    for block in range(totblocksnum):
+        #verify the hashes read
         digest = fin.read(32)
-        globalhash.update(digest)
-        if digest in blocklist:
-            blocklist[digest].append(block)
+        if globalhash.digest() != digest:
+            errexit(1, "hashes block corrupt!")
+
+        #read and check last blocks
+        if lastblocksize:
+            buffer = fin.read(bhlfilesize-fin.tell()+1)
+            lastblockbuffer = zlib.decompress(buffer)
+            blockhash = hashlib.sha256()
+            blockhash.update(lastblockbuffer)
+            if blockhash.digest() != lastblockdigest:
+                errexit(1, "last block corrupt!")
         else:
-            blocklist[digest] = [block]
-    lastblockdigest = digest
+            lastblockbuffer = b""
 
-    #verify the hashes read
-    digest = fin.read(32)
-    if globalhash.digest() != digest:
-        errexit(1, "hashes block corrupt!")
+        #now put all in the DB
+        #...
 
-    #read and check last blocks
-    if lastblocksize:
-        buffer = fin.read(bhlfilesize-fin.tell()+1)
-        lastblockbuffer = zlib.decompress(buffer)
-        blockhash = hashlib.sha256()
-        blockhash.update(lastblockbuffer)
-        if blockhash.digest() != lastblockdigest:
-            errexit(1, "last block corrupt!")
-    else:
-        lastblockbuffer = b""
+
+    errexit(1)
+
+
+##    imgfilename = cmdline.imgfilename
+##    if not os.path.exists(imgfilename):
+##        errexit(1, "image file/volume '%s' not found" % (imgfilename))
+##    imgfilesize = os.path.getsize(imgfilename)
+
+##    filename = cmdline.filename
+
+
+
+
+##    #evaluate target filename
+##    if not filename:
+##        if "filename" in metadata:
+##            filename = metadata["filename"]
+##        else:
+##            filename = os.path.split(sbxfilename)[1] + ".out"
+##    elif os.path.isdir(filename):
+##        if "filename" in metadata:
+##            filename = os.path.join(filename, metadata["filename"])
+##        else:
+##            filename = os.path.join(filename,
+##                                    os.path.split(sbxfilename)[1] + ".out")
+##    if os.path.exists(filename) and not cmdline.overwrite:
+##        errexit(1, "target file '%s' already exists!" % (filename))
+##
+
+
 
     scanstep = cmdline.step
     if scanstep == 0:
