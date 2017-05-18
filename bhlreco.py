@@ -29,8 +29,9 @@ import hashlib
 import argparse
 import time
 import zlib
+import sqlite3
 
-PROGRAM_VER = "0.7.0a"
+PROGRAM_VER = "0.7.1a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -100,21 +101,112 @@ def metadataDecode(data):
     return metadata
 
 
+class RecDB():
+    """Helper class to access Sqlite3 DB with recovery info"""
+
+    def __init__(self, dbfilename):
+        self.connection = sqlite3.connect(dbfilename)
+        self.cursor = self.connection.cursor()
+
+    def Commit(self):
+        self.connection.commit()
+
+    def CreateTables(self):
+        c = self.cursor
+        c.execute("CREATE TABLE bhl_sources (id INTEGER, name TEXT)")
+        c.execute("CREATE TABLE bhl_files (id INTEGER, blocksize INTEGER, size INTEGER, name TEXT, datetime INTEGER, lastblock BLOB)")
+        c.execute("CREATE TABLE bhl_hashlist (hash BLOB, fileid INTEGER, num INTEGER, pos INTEGER)")
+        c.execute("CREATE INDEX hash ON bhl_hashlist (hash)")
+        self.connection.commit()
+
+    def SetFileData(self, fid=0, fblocksize=0, fsize=0, fname="", fdatetime=0, flastblock=b""):
+        c = self.cursor
+        c.execute("INSERT INTO bhl_files (id, blocksize, size, name, datetime, lastblock) VALUES (?, ?, ?, ?, ?, ?)",
+                  (fid, fblocksize, fsize, fname, fdatetime, flastblock))
+        self.connection.commit()
+
+    def AddHash(self, fhash=0, fid=0, fnum=0):
+        c = self.cursor
+        c.execute("INSERT INTO bhl_hashlist (hash, fileid, num) VALUES (?, ?, ?)",
+                  (fhash, fid, fnum))
+
+    def SetHashPos(self, fhash=0, pos=0):
+        c = self.cursor
+        c.execute("UPDATE bhl_hashlist SET pos = ? WHERE hash = ?",
+                  (pos, fhash))
+
+##old db methods as a reference
+        
+    def GetMetaFromUID(self, uid):
+        meta = {}
+        c = self.cursor
+        c.execute("SELECT * from sbx_meta where uid = '%i'" % uid)
+        res = c.fetchone()
+        if res:
+            meta["filesize"] = res[1]
+            meta["filename"] = res[2]
+            meta["filedatetime"] = res[3]
+        return meta
+
+    def GetUIDFromFileName(self, filename):
+        c = self.cursor
+        c.execute("select uid from sbx_meta where name = '%s'" % (filename))
+        res = c.fetchone()
+        if res:
+            return(res[0])
+
+    def GetBlocksList(self, uid):
+        c = self.cursor
+        c.execute("SELECT num, fileid, pos from sbx_blocks where uid = '%i' group by num order by num" % (uid))
+        return c.fetchall()
+
+    def GetUIDDataList(self):
+        c = self.cursor
+        c.execute("SELECT * from sbx_uids")
+        res = {row[0]:row[1] for row in c.fetchall()}
+        return res
+
+    def GetSourcesList(self):
+        c = self.cursor
+        c.execute("SELECT * FROM sbx_source")
+        return c.fetchall()
+
+
+def uniquifyFileName(filename):
+    count = 0
+    uniq = ""
+    name,ext = os.path.splitext(filename)
+    while os.path.exists(filename):
+        count += 1
+        uniq = "(%i)" % count
+        filename = name + uniq + ext
+    return filename
+
+
 def main():
 
     cmdline = get_cmdline()
+    dbfilename = cmdline.dbfilename
 
+    #prepare database
+    print("creating '%s' database..." % (dbfilename))
+    open(dbfilename, 'w').close()
+    db = RecDB(dbfilename)
+    db.CreateTables()
+
+    i = 0
     for bhlfilename in cmdline.bhlfilename:
+        i+=1
         if not os.path.exists(bhlfilename):
             errexit(1, "BHL file '%s' not found" % (bhlfilename))
         bhlfilesize = os.path.getsize(bhlfilename)
 
         #read hashes in memory
         blocklist = {}
-        print("Reading BHL file '%s'..." % bhlfilename)
+        print("reading BHL file '%s'..." % bhlfilename)
         fin = open(bhlfilename, "rb", buffering=1024*1024)
         if BHL_MAGIC != fin.read(13):
-            errexit(1, "Not a valid BHL file")
+            errexit(1, "not a valid BHL file")
         #check ver
         bhlver = ord(fin.read(1))
         blocksize = int.from_bytes(fin.read(4), byteorder='big')
@@ -153,10 +245,17 @@ def main():
         else:
             lastblockbuffer = b""
 
-        #now put all in the DB
-        #...
-
-
+        #put data in the DB
+        #hashes
+        for digest in blocklist:
+            for pos in blocklist[digest]:
+                db.AddHash(fhash=digest, fid=i, fnum=pos)
+        #file info
+        db.SetFileData(fid=i, fblocksize=blocksize, fsize=filesize,
+                       fname=metadata["filename"],
+                       fdatetime=metadata["filedatetime"],
+                       flastblock=lastblockbuffer)
+        
     errexit(1)
 
 
