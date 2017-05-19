@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.1a"
+PROGRAM_VER = "0.7.3a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -52,7 +52,7 @@ def get_cmdline():
                         default="bhlreco.db3")
     parser.add_argument("-bhl", action="store", nargs="+", dest="bhlfilename", 
                         help="BHL file(s)", metavar="filename")
-    parser.add_argument("-d", action="store", 
+    parser.add_argument("-d", action="store", dest="destpath",
                         help="destination path", default="", metavar="path")
     parser.add_argument("-st", "--step", type=int, default=0,
                         help=("scan step"), metavar="n")
@@ -132,8 +132,29 @@ class RecDB():
 
     def SetHashPos(self, fhash=0, pos=0):
         c = self.cursor
-        c.execute("UPDATE bhl_hashlist SET pos = ? WHERE hash = ?",
+        c.execute("UPDATE bhl_hashlist SET pos = ? WHERE hash = ? AND pos IS NULL",
                   (pos, fhash))
+        return c.rowcount
+
+    def GetFileInfo(self, fid):
+        c = self.cursor
+        data = {}
+        c.execute("SELECT * FROM bhl_files where id = %i" % fid)
+        res = c.fetchone()
+        if res:
+            data["blocksize"] = res[1]
+            data["filesize"] = res[2]
+            data["filename"] = res[3]
+            data["filedatetime"] = res[4]
+            data["lastblock"] = res[5]
+        return data
+
+    def GetWriteList(self, fid):
+        c = self.cursor
+        data = []
+        c.execute("SELECT num, pos FROM bhl_hashlist WHERE fileid = %i AND pos IS NOT NULL ORDER BY num" % fid)
+        return c.fetchall()
+
 
 ##old db methods as a reference
         
@@ -186,17 +207,20 @@ def uniquifyFileName(filename):
 def main():
 
     cmdline = get_cmdline()
-    dbfilename = cmdline.dbfilename
+    print(cmdline)    
 
     #prepare database
+    dbfilename = cmdline.dbfilename
     print("creating '%s' database..." % (dbfilename))
     open(dbfilename, 'w').close()
     db = RecDB(dbfilename)
     db.CreateTables()
 
+    globalblocksnum = 0
     i = 0
+    sizelist = []
+
     for bhlfilename in cmdline.bhlfilename:
-        i+=1
         if not os.path.exists(bhlfilename):
             errexit(1, "BHL file '%s' not found" % (bhlfilename))
         bhlfilesize = os.path.getsize(bhlfilename)
@@ -210,6 +234,8 @@ def main():
         #check ver
         bhlver = ord(fin.read(1))
         blocksize = int.from_bytes(fin.read(4), byteorder='big')
+        if not blocksize in sizelist:
+            sizelist.append(blocksize)
         filesize = int.from_bytes(fin.read(8), byteorder='big')
         lastblocksize = filesize % blocksize
         totblocksnum = (filesize + blocksize-1) // blocksize
@@ -236,6 +262,7 @@ def main():
 
         #read and check last blocks
         if lastblocksize:
+            totblocksnum -= 1
             buffer = fin.read(bhlfilesize-fin.tell()+1)
             lastblockbuffer = zlib.decompress(buffer)
             blockhash = hashlib.sha256()
@@ -244,6 +271,8 @@ def main():
                 errexit(1, "last block corrupt!")
         else:
             lastblockbuffer = b""
+
+        globalblocksnum += totblocksnum
 
         #put data in the DB
         #hashes
@@ -255,86 +284,93 @@ def main():
                        fname=metadata["filename"],
                        fdatetime=metadata["filedatetime"],
                        flastblock=lastblockbuffer)
-        
-    errexit(1)
+        i+=1
 
-
-##    imgfilename = cmdline.imgfilename
-##    if not os.path.exists(imgfilename):
-##        errexit(1, "image file/volume '%s' not found" % (imgfilename))
-##    imgfilesize = os.path.getsize(imgfilename)
-
-##    filename = cmdline.filename
-
-
-
-
-##    #evaluate target filename
-##    if not filename:
-##        if "filename" in metadata:
-##            filename = metadata["filename"]
-##        else:
-##            filename = os.path.split(sbxfilename)[1] + ".out"
-##    elif os.path.isdir(filename):
-##        if "filename" in metadata:
-##            filename = os.path.join(filename, metadata["filename"])
-##        else:
-##            filename = os.path.join(filename,
-##                                    os.path.split(sbxfilename)[1] + ".out")
-##    if os.path.exists(filename) and not cmdline.overwrite:
-##        errexit(1, "target file '%s' already exists!" % (filename))
-##
-
-
-
-    scanstep = cmdline.step
-    if scanstep == 0:
-        scanstep = blocksize
-
-    #start scanning process...
-    print("scanning file '%s'..." % imgfilename)
-    fin = open(imgfilename, "rb", buffering=1024*1024)
-
-    updatetime = time.time() - 1
-    starttime = time.time()
-    writelist = {}
 
     #this list need to include all block sizes...
-    sizelist = [blocksize]
-    
-    for pos in range(0, imgfilesize, scanstep):
-        fin.seek(pos, 0)
-        buffer = fin.read(blocksize)
-        if len(buffer) > 0:
-            #need to check for all sizes
-            for size in sizelist:
-                blockhash = hashlib.sha256()
-                blockhash.update(buffer[:size])
-                digest = blockhash.digest()
-                if digest in blocklist:
-                    for blocknum in blocklist[digest]:
-                        if blocknum not in writelist:
-                            writelist[blocknum] = pos
+    maxblocksize = max(sizelist)
+    print("Max block size:", maxblocksize)
+    scanstep = cmdline.step
+    if scanstep == 0:
+        scanstep = mcd(sizelist)
+    print("Scan step:", scanstep)
 
-            #status update
-            blocksfound = len(writelist)
-            if ((time.time() > updatetime) or (totblocksnum == blocksfound) or
-                (imgfilesize-pos-len(buffer) == 0) ):
-                etime = (time.time()-starttime)
-                if etime == 0:
-                    etime = .001
-                print("  %.1f%% - tot: %i - found: %i - %.2fMB/s" %
-                      ((pos+len(buffer)-1)*100/imgfilesize,
-                       totblocksnum, blocksfound, pos/(1024*1024)/etime),
-                      end = "\r", flush=True)
-                updatetime = time.time() + .2
-                #break early if all the work is done
-                if totblocksnum == blocksfound:
-                    break
+    blocksfound = 0
+
+    #start scanning process...
+    for imgfilename in cmdline.imgfilename:
+        if not os.path.exists(imgfilename):
+            errexit(1, "image file/volume '%s' not found" % (imgfilename))
+        imgfilesize = os.path.getsize(imgfilename)
+
+        print("scanning file '%s'..." % imgfilename)
+        fin = open(imgfilename, "rb", buffering=1024*1024)
+
+        updatetime = time.time() - 1
+        starttime = time.time()
+        writelist = {}
+        docommit = False
+
+        for pos in range(0, imgfilesize, scanstep):
+            fin.seek(pos, 0)
+            buffer = fin.read(maxblocksize)
+            if len(buffer) > 0:
+                #need to check for all sizes
+                for size in sizelist:
+                    blockhash = hashlib.sha256()
+                    blockhash.update(buffer[:size])
+                    digest = blockhash.digest()
+                    if db.SetHashPos(fhash=digest, pos=pos):
+                        docommit = True
+                        blocksfound += 1
+
+                #status update
+                if ((time.time() > updatetime) or (globalblocksnum == blocksfound) or
+                    (imgfilesize-pos-len(buffer) == 0) ):
+                    etime = (time.time()-starttime)
+                    if etime == 0:
+                        etime = .001
+                    print("  %.1f%% - tot: %i - found: %i - %.2fMB/s" %
+                          ((pos+len(buffer)-1)*100/imgfilesize,
+                           globalblocksnum, blocksfound, pos/(1024*1024)/etime),
+                          end = "\r", flush=True)
+                    updatetime = time.time() + .2
+                    if docommit:
+                        db.Commit()
+                        docommit = False
+                    #break early if all the work is done
+                    if blocksfound == globalblocksnum:
+                        break
 
     print("\nscan completed.")
 
-    #rebuild file
+
+    for fid in range(len(cmdline.bhlfilename)):
+        fileinfo = db.GetFileInfo(fid)
+        filename = fileinfo["filename"]
+        filename = os.path.join(cmdline.destpath, filename)
+        print("creating file '%s'..." % filename)
+        open(filename, 'w').close()
+        fout = open(filename, "wb")
+
+        #get list of blocks num & positions
+        blocksize = fileinfo["blocksize"]
+        lastblock = fileinfo["lastblock"]
+        writelist = db.GetWriteList(fid)
+        for data in writelist:
+            blocknum = data[0]
+            pos = data[1]
+            fin.seek(pos)
+            buffer = fin.read(blocksize)
+            fout.seek(blocknum*blocksize)
+            fout.write(buffer)
+        fout.write(lastblock)
+
+    errexit(1)
+
+#################################
+
+    #rebuild files
     print("creating file '%s'..." % filename)
     open(filename, 'w').close()
     fout = open(filename, "wb")
