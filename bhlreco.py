@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.3a"
+PROGRAM_VER = "0.7.4a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -113,9 +113,8 @@ class RecDB():
 
     def CreateTables(self):
         c = self.cursor
-        c.execute("CREATE TABLE bhl_sources (id INTEGER, name TEXT)")
         c.execute("CREATE TABLE bhl_files (id INTEGER, blocksize INTEGER, size INTEGER, name TEXT, datetime INTEGER, lastblock BLOB)")
-        c.execute("CREATE TABLE bhl_hashlist (hash BLOB, fileid INTEGER, num INTEGER, pos INTEGER)")
+        c.execute("CREATE TABLE bhl_hashlist (hash BLOB, fileid INTEGER, sourceid INTEGER, num INTEGER, pos INTEGER)")
         c.execute("CREATE INDEX hash ON bhl_hashlist (hash)")
         self.connection.commit()
 
@@ -130,10 +129,10 @@ class RecDB():
         c.execute("INSERT INTO bhl_hashlist (hash, fileid, num) VALUES (?, ?, ?)",
                   (fhash, fid, fnum))
 
-    def SetHashPos(self, fhash=0, pos=0):
+    def SetHashPos(self, fhash=0, sid=0, pos=0):
         c = self.cursor
-        c.execute("UPDATE bhl_hashlist SET pos = ? WHERE hash = ? AND pos IS NULL",
-                  (pos, fhash))
+        c.execute("UPDATE bhl_hashlist SET pos = ?, sourceid = ? WHERE hash = ? AND pos IS NULL",
+                  (pos, sid, fhash))
         return c.rowcount
 
     def GetFileInfo(self, fid):
@@ -152,46 +151,8 @@ class RecDB():
     def GetWriteList(self, fid):
         c = self.cursor
         data = []
-        c.execute("SELECT num, pos FROM bhl_hashlist WHERE fileid = %i AND pos IS NOT NULL ORDER BY num" % fid)
+        c.execute("SELECT num, sourceid, pos FROM bhl_hashlist WHERE fileid = %i AND pos IS NOT NULL ORDER BY num" % fid)
         return c.fetchall()
-
-
-##old db methods as a reference
-        
-    def GetMetaFromUID(self, uid):
-        meta = {}
-        c = self.cursor
-        c.execute("SELECT * from sbx_meta where uid = '%i'" % uid)
-        res = c.fetchone()
-        if res:
-            meta["filesize"] = res[1]
-            meta["filename"] = res[2]
-            meta["filedatetime"] = res[3]
-        return meta
-
-    def GetUIDFromFileName(self, filename):
-        c = self.cursor
-        c.execute("select uid from sbx_meta where name = '%s'" % (filename))
-        res = c.fetchone()
-        if res:
-            return(res[0])
-
-    def GetBlocksList(self, uid):
-        c = self.cursor
-        c.execute("SELECT num, fileid, pos from sbx_blocks where uid = '%i' group by num order by num" % (uid))
-        return c.fetchall()
-
-    def GetUIDDataList(self):
-        c = self.cursor
-        c.execute("SELECT * from sbx_uids")
-        res = {row[0]:row[1] for row in c.fetchall()}
-        return res
-
-    def GetSourcesList(self):
-        c = self.cursor
-        c.execute("SELECT * FROM sbx_source")
-        return c.fetchall()
-
 
 def uniquifyFileName(filename):
     count = 0
@@ -212,12 +173,13 @@ def main():
     #prepare database
     dbfilename = cmdline.dbfilename
     print("creating '%s' database..." % (dbfilename))
-    open(dbfilename, 'w').close()
+    if dbfilename.upper() != ":MEMORY:":
+        open(dbfilename, 'w').close()
     db = RecDB(dbfilename)
     db.CreateTables()
 
     globalblocksnum = 0
-    i = 0
+    bhlfileid = 0
     sizelist = []
 
     for bhlfilename in cmdline.bhlfilename:
@@ -269,6 +231,8 @@ def main():
             blockhash.update(lastblockbuffer)
             if blockhash.digest() != lastblockdigest:
                 errexit(1, "last block corrupt!")
+            #remove lastblock from the list
+            del blocklist[lastblockdigest]
         else:
             lastblockbuffer = b""
 
@@ -278,13 +242,13 @@ def main():
         #hashes
         for digest in blocklist:
             for pos in blocklist[digest]:
-                db.AddHash(fhash=digest, fid=i, fnum=pos)
+                db.AddHash(fhash=digest, fid=bhlfileid, fnum=pos)
         #file info
-        db.SetFileData(fid=i, fblocksize=blocksize, fsize=filesize,
+        db.SetFileData(fid=bhlfileid, fblocksize=blocksize, fsize=filesize,
                        fname=metadata["filename"],
                        fdatetime=metadata["filedatetime"],
                        flastblock=lastblockbuffer)
-        i+=1
+        bhlfileid +=1
 
 
     #this list need to include all block sizes...
@@ -295,10 +259,10 @@ def main():
         scanstep = mcd(sizelist)
     print("Scan step:", scanstep)
 
-    blocksfound = 0
-
     #start scanning process...
-    for imgfilename in cmdline.imgfilename:
+    blocksfound = 0
+    for imgfileid in range(len(cmdline.imgfilename)):
+        imgfilename = cmdline.imgfilename[imgfileid]
         if not os.path.exists(imgfilename):
             errexit(1, "image file/volume '%s' not found" % (imgfilename))
         imgfilesize = os.path.getsize(imgfilename)
@@ -320,7 +284,7 @@ def main():
                     blockhash = hashlib.sha256()
                     blockhash.update(buffer[:size])
                     digest = blockhash.digest()
-                    if db.SetHashPos(fhash=digest, pos=pos):
+                    if db.SetHashPos(fhash=digest, sid=imgfileid, pos=pos):
                         docommit = True
                         blocksfound += 1
 
@@ -341,10 +305,17 @@ def main():
                     #break early if all the work is done
                     if blocksfound == globalblocksnum:
                         break
+        fin.close()
+        print()
+        
+    print("scan completed.")
 
-    print("\nscan completed.")
+    #open all the sources
+    finlist = {}
+    for imgfileid in range(len(cmdline.imgfilename)):
+        finlist[imgfileid] = open(cmdline.imgfilename[imgfileid], "rb")
 
-
+    #start rebuilding files...
     for fid in range(len(cmdline.bhlfilename)):
         fileinfo = db.GetFileInfo(fid)
         filename = fileinfo["filename"]
@@ -359,12 +330,19 @@ def main():
         writelist = db.GetWriteList(fid)
         for data in writelist:
             blocknum = data[0]
-            pos = data[1]
-            fin.seek(pos)
-            buffer = fin.read(blocksize)
+            imgid = data[1]
+            pos = data[2]
+            finlist[imgid].seek(pos)
+            buffer = finlist[imgid].read(blocksize)
             fout.seek(blocknum*blocksize)
             fout.write(buffer)
         fout.write(lastblock)
+        fout.close()
+        
+        if "filedatetime" in fileinfo:
+            os.utime(filename,
+                     (int(time.time()), fileinfo["filedatetime"]))
+
 
     errexit(1)
 
@@ -397,10 +375,6 @@ def main():
 
     fout.close()
     fin.close()
-
-    if "filedatetime" in metadata:
-        os.utime(filename,
-                 (int(time.time()), metadata["filedatetime"]))
 
     if filehash.digest() == globalhash.digest():
         print("hash match!")
