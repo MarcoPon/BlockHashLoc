@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.4a"
+PROGRAM_VER = "0.7.5a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -49,7 +49,7 @@ def get_cmdline():
     parser.add_argument("-db", "--database", action="store", dest="dbfilename",
                         metavar="filename",
                         help="temporary db with recovery info",
-                        default="bhlreco.db3")
+                        default=":memory:")
     parser.add_argument("-bhl", action="store", nargs="+", dest="bhlfilename", 
                         help="BHL file(s)", metavar="filename")
     parser.add_argument("-d", action="store", dest="destpath",
@@ -113,15 +113,15 @@ class RecDB():
 
     def CreateTables(self):
         c = self.cursor
-        c.execute("CREATE TABLE bhl_files (id INTEGER, blocksize INTEGER, size INTEGER, name TEXT, datetime INTEGER, lastblock BLOB)")
+        c.execute("CREATE TABLE bhl_files (id INTEGER, blocksize INTEGER, size INTEGER, name TEXT, datetime INTEGER, lastblock BLOB, hash BLOB)")
         c.execute("CREATE TABLE bhl_hashlist (hash BLOB, fileid INTEGER, sourceid INTEGER, num INTEGER, pos INTEGER)")
         c.execute("CREATE INDEX hash ON bhl_hashlist (hash)")
         self.connection.commit()
 
-    def SetFileData(self, fid=0, fblocksize=0, fsize=0, fname="", fdatetime=0, flastblock=b""):
+    def SetFileData(self, fid=0, fblocksize=0, fsize=0, fname="", fdatetime=0, flastblock=b"", fhash=b""):
         c = self.cursor
-        c.execute("INSERT INTO bhl_files (id, blocksize, size, name, datetime, lastblock) VALUES (?, ?, ?, ?, ?, ?)",
-                  (fid, fblocksize, fsize, fname, fdatetime, flastblock))
+        c.execute("INSERT INTO bhl_files (id, blocksize, size, name, datetime, lastblock, hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (fid, fblocksize, fsize, fname, fdatetime, flastblock, fhash))
         self.connection.commit()
 
     def AddHash(self, fhash=0, fid=0, fnum=0):
@@ -146,6 +146,7 @@ class RecDB():
             data["filename"] = res[3]
             data["filedatetime"] = res[4]
             data["lastblock"] = res[5]
+            data["hash"] = res[6]
         return data
 
     def GetWriteList(self, fid):
@@ -247,17 +248,17 @@ def main():
         db.SetFileData(fid=bhlfileid, fblocksize=blocksize, fsize=filesize,
                        fname=metadata["filename"],
                        fdatetime=metadata["filedatetime"],
-                       flastblock=lastblockbuffer)
+                       flastblock=lastblockbuffer,
+                       fhash=globalhash.digest())
         bhlfileid +=1
 
 
     #this list need to include all block sizes...
     maxblocksize = max(sizelist)
-    print("Max block size:", maxblocksize)
     scanstep = cmdline.step
     if scanstep == 0:
         scanstep = mcd(sizelist)
-    print("Scan step:", scanstep)
+    print("scan step:", scanstep)
 
     #start scanning process...
     blocksfound = 0
@@ -320,6 +321,7 @@ def main():
         fileinfo = db.GetFileInfo(fid)
         filename = fileinfo["filename"]
         filename = os.path.join(cmdline.destpath, filename)
+        filesize = fileinfo["filesize"]
         print("creating file '%s'..." % filename)
         open(filename, 'w').close()
         fout = open(filename, "wb")
@@ -328,6 +330,13 @@ def main():
         blocksize = fileinfo["blocksize"]
         lastblock = fileinfo["lastblock"]
         writelist = db.GetWriteList(fid)
+        totblocksnum = filesize // blocksize
+
+        if len(writelist) < totblocksnum:
+            print("file incomplete! block missings: %i" %
+                  (totblocksnum - len(writelist)))
+
+        filehash = hashlib.sha256()
         for data in writelist:
             blocknum = data[0]
             imgid = data[1]
@@ -336,50 +345,24 @@ def main():
             buffer = finlist[imgid].read(blocksize)
             fout.seek(blocknum*blocksize)
             fout.write(buffer)
-        fout.write(lastblock)
+            blockhash = hashlib.sha256()
+            blockhash.update(buffer)
+            filehash.update(blockhash.digest())
+        if lastblock:
+            fout.write(lastblock)
+            blockhash = hashlib.sha256()
+            blockhash.update(lastblock)
+            filehash.update(blockhash.digest())
         fout.close()
-        
         if "filedatetime" in fileinfo:
             os.utime(filename,
                      (int(time.time()), fileinfo["filedatetime"]))
 
+        if filehash.digest() == fileinfo["hash"]:
+            print("hash match!")
+        else:
+            print("hash mismatch! decoded file corrupted/incomplete!")
 
-    errexit(1)
-
-#################################
-
-    #rebuild files
-    print("creating file '%s'..." % filename)
-    open(filename, 'w').close()
-    fout = open(filename, "wb")
-
-    filehash = hashlib.sha256()
-    for blocknum in sorted(writelist):
-        #todo: add missing blocks check...
-        pos = writelist[blocknum]
-        fin.seek(pos)
-        buffer = fin.read(blocksize)
-        fout.seek(blocknum*blocksize)
-        fout.write(buffer)
-        #hash check
-        blockhash = hashlib.sha256()
-        blockhash.update(buffer)
-        filehash.update(blockhash.digest())
-    if lastblocksize:
-        #fout.seek(0, os.SEEK_END)
-        fout.seek((totblocksnum-1)*blocksize)
-        fout.write(lastblockbuffer)
-        blockhash = hashlib.sha256()
-        blockhash.update(lastblockbuffer)
-        filehash.update(blockhash.digest())
-
-    fout.close()
-    fin.close()
-
-    if filehash.digest() == globalhash.digest():
-        print("hash match!")
-    else:
-        errexit(1, "hash mismatch! decoded file corrupted!")
 
 
 if __name__ == '__main__':
