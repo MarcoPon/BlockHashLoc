@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.5a"
+PROGRAM_VER = "0.7.6a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -285,9 +285,10 @@ def main():
                     blockhash = hashlib.sha256()
                     blockhash.update(buffer[:size])
                     digest = blockhash.digest()
-                    if db.SetHashPos(fhash=digest, sid=imgfileid, pos=pos):
+                    num = db.SetHashPos(fhash=digest, sid=imgfileid, pos=pos)
+                    if num:
                         docommit = True
-                        blocksfound += 1
+                        blocksfound += num
 
                 #status update
                 if ((time.time() > updatetime) or (globalblocksnum == blocksfound) or
