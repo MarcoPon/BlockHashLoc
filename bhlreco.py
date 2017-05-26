@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.6a"
+PROGRAM_VER = "0.7.7a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -40,7 +40,7 @@ def get_cmdline():
     parser = argparse.ArgumentParser(
              description="create a SeqBox container",
              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-             prefix_chars='-+')
+             prefix_chars='-+', fromfile_prefix_chars='@')
     parser.add_argument("-v", "--version", action='version', 
                         version='BlockHashLoc ' +
                         'Recover v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
@@ -312,6 +312,10 @@ def main():
         
     print("scan completed.")
 
+    filesrestored = 0
+    filesrestoredok = 0
+    filesmissing= 0
+
     #open all the sources
     finlist = {}
     for imgfileid in range(len(cmdline.imgfilename)):
@@ -323,9 +327,6 @@ def main():
         filename = fileinfo["filename"]
         filename = os.path.join(cmdline.destpath, filename)
         filesize = fileinfo["filesize"]
-        print("creating file '%s'..." % filename)
-        open(filename, 'w').close()
-        fout = open(filename, "wb")
 
         #get list of blocks num & positions
         blocksize = fileinfo["blocksize"]
@@ -333,37 +334,50 @@ def main():
         writelist = db.GetWriteList(fid)
         totblocksnum = filesize // blocksize
 
-        if len(writelist) < totblocksnum:
-            print("file incomplete! block missings: %i" %
-                  (totblocksnum - len(writelist)))
+        if len(writelist) > 0:
+            print("creating file '%s'..." % filename)
+            open(filename, 'w').close()
+            fout = open(filename, "wb")
 
-        filehash = hashlib.sha256()
-        for data in writelist:
-            blocknum = data[0]
-            imgid = data[1]
-            pos = data[2]
-            finlist[imgid].seek(pos)
-            buffer = finlist[imgid].read(blocksize)
-            fout.seek(blocknum*blocksize)
-            fout.write(buffer)
-            blockhash = hashlib.sha256()
-            blockhash.update(buffer)
-            filehash.update(blockhash.digest())
-        if lastblock:
-            fout.write(lastblock)
-            blockhash = hashlib.sha256()
-            blockhash.update(lastblock)
-            filehash.update(blockhash.digest())
-        fout.close()
-        if "filedatetime" in fileinfo:
-            os.utime(filename,
-                     (int(time.time()), fileinfo["filedatetime"]))
+            if len(writelist) < totblocksnum:
+                print("file incomplete! block missings: %i" %
+                      (totblocksnum - len(writelist)))
 
-        if filehash.digest() == fileinfo["hash"]:
-            print("hash match!")
+            filehash = hashlib.sha256()
+            for data in writelist:
+                blocknum = data[0]
+                imgid = data[1]
+                pos = data[2]
+                finlist[imgid].seek(pos)
+                buffer = finlist[imgid].read(blocksize)
+                fout.seek(blocknum*blocksize)
+                fout.write(buffer)
+                blockhash = hashlib.sha256()
+                blockhash.update(buffer)
+                filehash.update(blockhash.digest())
+            if lastblock:
+                fout.write(lastblock)
+                blockhash = hashlib.sha256()
+                blockhash.update(lastblock)
+                filehash.update(blockhash.digest())
+            fout.close()
+            if "filedatetime" in fileinfo:
+                os.utime(filename,
+                         (int(time.time()), fileinfo["filedatetime"]))
+            filesrestored += 1
+
+            if filehash.digest() == fileinfo["hash"]:
+                print("hash match!")
+            else:
+                print("hash mismatch! decoded file corrupted/incomplete!")
+            filesrestoredok += 1
+
         else:
-            print("hash mismatch! decoded file corrupted/incomplete!")
+            print("nothing found for file '%s'" % filename)
+            filesmissing += 1
 
+    print("\nfiles restored: %i - with errors: %i - files missing: %i" %
+          (filesrestored, filesrestoredok-filesrestored, filesmissing))
 
 
 if __name__ == '__main__':
