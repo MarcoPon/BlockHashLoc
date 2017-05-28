@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.7a"
+PROGRAM_VER = "0.7.8a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -155,6 +155,7 @@ class RecDB():
         c.execute("SELECT num, sourceid, pos FROM bhl_hashlist WHERE fileid = %i AND pos IS NOT NULL ORDER BY num" % fid)
         return c.fetchall()
 
+
 def uniquifyFileName(filename):
     count = 0
     uniq = ""
@@ -166,10 +167,18 @@ def uniquifyFileName(filename):
     return filename
 
 
+def getFileSize(filename):
+    """Calc file size - works on devices too"""
+    ftemp = os.open(filename, os.O_RDONLY)
+    try:
+        return os.lseek(ftemp, 0, os.SEEK_END)
+    finally:
+        os.close(ftemp)
+
+
 def main():
 
     cmdline = get_cmdline()
-    print(cmdline)    
 
     #prepare database
     dbfilename = cmdline.dbfilename
@@ -266,7 +275,7 @@ def main():
         imgfilename = cmdline.imgfilename[imgfileid]
         if not os.path.exists(imgfilename):
             errexit(1, "image file/volume '%s' not found" % (imgfilename))
-        imgfilesize = os.path.getsize(imgfilename)
+        imgfilesize = getFileSize(imgfilename)
 
         print("scanning file '%s'..." % imgfilename)
         fin = open(imgfilename, "rb", buffering=1024*1024)
