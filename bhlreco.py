@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.8a"
+PROGRAM_VER = "0.7.9a"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -322,7 +322,7 @@ def main():
     print("scan completed.")
 
     filesrestored = 0
-    filesrestoredok = 0
+    filesrestorederr = 0
     filesmissing= 0
 
     #open all the sources
@@ -379,14 +379,14 @@ def main():
                 print("hash match!")
             else:
                 print("hash mismatch! decoded file corrupted/incomplete!")
-            filesrestoredok += 1
+                filesrestorederr += 1
 
         else:
             print("nothing found for file '%s'" % filename)
             filesmissing += 1
 
     print("\nfiles restored: %i - with errors: %i - files missing: %i" %
-          (filesrestored, filesrestoredok-filesrestored, filesmissing))
+          (filesrestored, filesrestorederr, filesmissing))
 
 
 if __name__ == '__main__':
