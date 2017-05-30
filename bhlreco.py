@@ -31,7 +31,7 @@ import time
 import zlib
 import sqlite3
 
-PROGRAM_VER = "0.7.9a"
+PROGRAM_VER = "0.7.10b"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -343,7 +343,7 @@ def main():
         writelist = db.GetWriteList(fid)
         totblocksnum = filesize // blocksize
 
-        if len(writelist) > 0:
+        if True: 
             print("creating file '%s'..." % filename)
             open(filename, 'w').close()
             fout = open(filename, "wb")

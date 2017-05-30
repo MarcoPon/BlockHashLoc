@@ -29,8 +29,9 @@ import hashlib
 import argparse
 from time import time
 import zlib
+import fnmatch
 
-PROGRAM_VER = "0.7.0a"
+PROGRAM_VER = "0.7.1b"
 BHL_VER = 1
 
 def get_cmdline():
@@ -50,6 +51,8 @@ def get_cmdline():
                         help="blocks size", metavar="n")
     parser.add_argument("-c", "--continue", action="store_true", default=False,
                         help="continue on block errors", dest="cont")
+    parser.add_argument("-r", "--recurse", action="store_true", default=False,
+                        help="recurse subdirs")
     res = parser.parse_args()
     return res
 
@@ -134,10 +137,25 @@ def main():
     cmdline = get_cmdline()
     blocksize = cmdline.blocksize
 
+    #build list of files to process
+    filenames = []
+    for filespec in cmdline.filename:
+        filepath, filename = os.path.split(filespec)
+        if not filepath:
+            filepath = "."
+        if not filename:
+            filename = "*"
+        for wroot, wdirs, wfiles in os.walk(filepath):
+            if not cmdline.recurse:
+                wdirs[:] = []
+            for fn in fnmatch.filter(wfiles, filename):
+                filenames.append(os.path.join(wroot, fn))
+    filenames = sorted(set(filenames), key=os.path.getsize)
+
     bhlok = 0
     bhlerr = 0
 
-    for filename in cmdline.filename:
+    for filename in filenames:
         if not os.path.exists(filename):
             errexit(1, "file '%s' not found" % (filename))
  
