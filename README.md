@@ -16,9 +16,6 @@ This project is related to [SeqBox](https://github.com/MarcoPon/SeqBox). The dif
  
 - BHL realize the same effect with a parallel (small) file, that can be stored separately (in other media, or in the cloud), or along the original as a SeqBox file (so that it can be recovered too, as the first step).
 
-**N.B.**
-Currently the two tools works on one file at the time, but that will obviously change. They are already functional, but it's still a work in progress...
-
 ***
 
 ## Tech spec

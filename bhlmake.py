@@ -30,7 +30,7 @@ import argparse
 from time import time
 import zlib
 
-PROGRAM_VER = "0.6.2a"
+PROGRAM_VER = "0.7.0a"
 BHL_VER = 1
 
 def get_cmdline():
@@ -38,18 +38,18 @@ def get_cmdline():
     parser = argparse.ArgumentParser(
              description="create a SeqBox container",
              formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-             prefix_chars='-+')
+             prefix_chars='-', fromfile_prefix_chars='@')
     parser.add_argument("-v", "--version", action='version', 
                         version='BlockHashLoc ' +
                         'Maker v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
-    parser.add_argument("filename", action="store", 
-                        help="file to encode")
-    parser.add_argument("bhlfilename", action="store", nargs='?',
-                        help="BHL file")
-    parser.add_argument("-o", "--overwrite", action="store_true", default=False,
-                        help="overwrite existing file")
+    parser.add_argument("filename", action="store", nargs="+",
+                        help="file to process")
+    parser.add_argument("-d", action="store", dest="destpath",
+                        help="destination path", default="", metavar="path")
     parser.add_argument("-b", "--blocksize", type=int, default=512,
                         help="blocks size", metavar="n")
+    parser.add_argument("-c", "--continue", action="store_true", default=False,
+                        help="continue on block errors", dest="cont")
     res = parser.parse_args()
     return res
 
@@ -60,28 +60,10 @@ def errexit(errlev=1, mess=""):
         sys.stderr.write("%s: error: %s\n" %
                          (os.path.split(sys.argv[0])[1], mess))
     sys.exit(errlev)
-    
 
-def main():
 
-    cmdline = get_cmdline()
-
-    blocksize = cmdline.blocksize
-    filename = cmdline.filename
-    bhlfilename = cmdline.bhlfilename
-    if not bhlfilename:
-        bhlfilename = os.path.split(filename)[1] + ".bhl"
-    elif os.path.isdir(bhlfilename):
-        bhlfilename = os.path.join(bhlfilename,
-                                   os.path.split(filename)[1] + ".bhl")
-    if os.path.exists(bhlfilename) and not cmdline.overwrite:
-        errexit(1, "BHL file '%s' already exists!" % (bhlfilename))
-        
-    if not os.path.exists(filename):
-        errexit(1, "file '%s' not found" % (filename))
+def buildBHL(filename, bhlfilename, blocksize):
     filesize = os.path.getsize(filename)
-
-
     fin = open(filename, "rb", buffering=1024*1024)
     print("creating file '%s'..." % bhlfilename)
     open(bhlfilename, 'w').close()
@@ -132,6 +114,7 @@ def main():
                   end="\r", flush=True)
             updatetime = time() + .1
         
+    #write hash of hashes and block remainder (if present)
     fout.write(globalhash.digest())
     if len(bufferz):
         fout.write(bufferz)
@@ -142,8 +125,43 @@ def main():
     #show stats about the file just created
     bhlfilesize = os.path.getsize(bhlfilename)
     overhead = bhlfilesize * 100 / filesize
-    print("BHL file size: %i - blocks: %i - ratio: %.1f%%" %
+    print("  BHL file size: %i - blocks: %i - ratio: %.1f%%" %
           (bhlfilesize, blocksnum, overhead))
+
+
+def main():
+
+    cmdline = get_cmdline()
+    blocksize = cmdline.blocksize
+
+    bhlok = 0
+    bhlerr = 0
+
+    for filename in cmdline.filename:
+        if not os.path.exists(filename):
+            errexit(1, "file '%s' not found" % (filename))
+ 
+        destpath = cmdline.destpath
+        if not destpath:
+            bhlfilename = os.path.split(filename)[1] + ".bhl"
+        else:
+            if not os.path.isdir(destpath):
+                destpath = os.path.split(filename)[0]
+            bhlfilename = os.path.join(destpath,
+                                       os.path.split(filename)[1] + ".bhl")
+
+        try:
+            buildBHL(filename, bhlfilename, blocksize)
+            bhlok += 1
+        except:
+            if cmdline.cont:
+                bhlerr += 1
+                print("  warning: can't create BHL file!")
+            else:
+                errexit(1, "can't creating BHL file '%s'" % (bhlfilename))
+
+        if len(cmdline.filename) > 1 and bhlerr > 0:
+            print("\nBHL files created: %i - errors: %i" % (bhlok, bhlerr))            
 
 
 if __name__ == '__main__':
