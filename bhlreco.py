@@ -30,8 +30,9 @@ import argparse
 import time
 import zlib
 import sqlite3
+import glob
 
-PROGRAM_VER = "0.7.10b"
+PROGRAM_VER = "0.7.11b"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -180,6 +181,23 @@ def main():
 
     cmdline = get_cmdline()
 
+    globalblocksnum = 0
+    bhlfileid = 0
+    sizelist = []
+
+    #build list of BHL files to process
+    bhlfilenames = []
+    for filename in cmdline.bhlfilename:
+        if os.path.isdir(filename):
+            filename = os.path.join(filename, "*")
+        bhlfilenames += glob.glob(filename)
+    bhlfilenames = [filename for filename in bhlfilenames
+                    if not os.path.isdir(filename)]
+    bhlfilenames = sorted(set(bhlfilenames))
+
+    if len(bhlfilenames) == 0:
+        errexit(1, "no BHL file(s) found!")
+
     #prepare database
     dbfilename = cmdline.dbfilename
     print("creating '%s' database..." % (dbfilename))
@@ -188,18 +206,16 @@ def main():
     db = RecDB(dbfilename)
     db.CreateTables()
 
-    globalblocksnum = 0
-    bhlfileid = 0
-    sizelist = []
-
-    for bhlfilename in cmdline.bhlfilename:
+    #process all BHL files
+    print("reading BHL file(s)...")
+    for bhlfilename in bhlfilenames:
         if not os.path.exists(bhlfilename):
             errexit(1, "BHL file '%s' not found" % (bhlfilename))
         bhlfilesize = os.path.getsize(bhlfilename)
 
         #read hashes in memory
         blocklist = {}
-        print("reading BHL file '%s'..." % bhlfilename)
+        print("  '%s'..." % bhlfilename)
         fin = open(bhlfilename, "rb", buffering=1024*1024)
         if BHL_MAGIC != fin.read(13):
             errexit(1, "not a valid BHL file")
@@ -331,7 +347,7 @@ def main():
         finlist[imgfileid] = open(cmdline.imgfilename[imgfileid], "rb")
 
     #start rebuilding files...
-    for fid in range(len(cmdline.bhlfilename)):
+    for fid in range(len(bhlfilenames)):
         fileinfo = db.GetFileInfo(fid)
         filename = fileinfo["filename"]
         filename = os.path.join(cmdline.destpath, filename)
@@ -343,7 +359,9 @@ def main():
         writelist = db.GetWriteList(fid)
         totblocksnum = filesize // blocksize
 
-        if True: 
+        print(totblocksnum, len(writelist))
+
+        if len(writelist) > 0 or totblocksnum == 0: 
             print("creating file '%s'..." % filename)
             open(filename, 'w').close()
             fout = open(filename, "wb")
