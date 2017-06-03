@@ -207,7 +207,6 @@ def main():
     db.CreateTables()
 
     #process all BHL files
-    print("reading BHL file(s)...")
     for bhlfilename in bhlfilenames:
         if not os.path.exists(bhlfilename):
             errexit(1, "BHL file '%s' not found" % (bhlfilename))
@@ -215,7 +214,7 @@ def main():
 
         #read hashes in memory
         blocklist = {}
-        print("  '%s'..." % bhlfilename)
+        print("reading BHL file '%s'..." % bhlfilename)
         fin = open(bhlfilename, "rb", buffering=1024*1024)
         if BHL_MAGIC != fin.read(13):
             errexit(1, "not a valid BHL file")
@@ -234,6 +233,7 @@ def main():
 
         #read all block hashes
         globalhash = hashlib.sha256()
+        updatetime = time.time() 
         for block in range(totblocksnum):
             digest = fin.read(32)
             globalhash.update(digest)
@@ -241,6 +241,12 @@ def main():
                 blocklist[digest].append(block)
             else:
                 blocklist[digest] = [block]
+            #some progress update
+            if time.time() > updatetime:
+                print("%.1f%%" % (fin.tell()*100.0/bhlfilesize), " ",
+                      end="\r", flush=True)
+                updatetime = time.time() + .1
+
         lastblockdigest = digest
 
         #verify the hashes read
@@ -266,9 +272,20 @@ def main():
 
         #put data in the DB
         #hashes
+        print("updating db...")
+        updatetime = time.time()
+        i = 0
         for digest in blocklist:
             for pos in blocklist[digest]:
                 db.AddHash(fhash=digest, fid=bhlfileid, fnum=pos)
+            i+= 1
+            #some progress update
+            if time.time() > updatetime:
+                print("%.1f%%" % (i*100.0/len(blocklist)), " ",
+                      end="\r", flush=True)
+                db.Commit()
+                updatetime = time.time() + .1
+            
         #file info
         db.SetFileData(fid=bhlfileid, fblocksize=blocksize, fsize=filesize,
                        fname=metadata["filename"],
@@ -358,8 +375,6 @@ def main():
         lastblock = fileinfo["lastblock"]
         writelist = db.GetWriteList(fid)
         totblocksnum = filesize // blocksize
-
-        print(totblocksnum, len(writelist))
 
         if len(writelist) > 0 or totblocksnum == 0: 
             print("creating file '%s'..." % filename)
