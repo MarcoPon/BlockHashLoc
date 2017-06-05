@@ -32,7 +32,7 @@ import zlib
 import sqlite3
 import glob
 
-PROGRAM_VER = "0.7.11b"
+PROGRAM_VER = "0.7.15b"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -45,7 +45,7 @@ def get_cmdline():
     parser.add_argument("-v", "--version", action='version', 
                         version='BlockHashLoc ' +
                         'Recover v%s - (C) 2017 by M.Pontello' % PROGRAM_VER) 
-    parser.add_argument("imgfilename", action="store", nargs="+",
+    parser.add_argument("imgfilename", action="store", nargs="*",
                         help="image(s)/volumes(s) to scan")
     parser.add_argument("-db", "--database", action="store", dest="dbfilename",
                         metavar="filename",
@@ -55,8 +55,12 @@ def get_cmdline():
                         help="BHL file(s)", metavar="filename")
     parser.add_argument("-d", action="store", dest="destpath",
                         help="destination path", default="", metavar="path")
+    parser.add_argument("-o", "--offset", type=int, default=0,
+                        help=("offset from the start"), metavar="n")
     parser.add_argument("-st", "--step", type=int, default=0,
                         help=("scan step"), metavar="n")
+    parser.add_argument("-t","--test", action="store_true", default=False,
+                        help="only test BHL file(s)")
     res = parser.parse_args()
     return res
 
@@ -267,45 +271,61 @@ def main():
             del blocklist[lastblockdigest]
         else:
             lastblockbuffer = b""
+        print("100%  ", end="\r", flush=True)
 
         globalblocksnum += totblocksnum
 
         #put data in the DB
         #hashes
-        print("updating db...")
-        updatetime = time.time()
-        i = 0
-        for digest in blocklist:
-            for pos in blocklist[digest]:
-                db.AddHash(fhash=digest, fid=bhlfileid, fnum=pos)
-            i+= 1
-            #some progress update
-            if time.time() > updatetime:
-                print("%.1f%%" % (i*100.0/len(blocklist)), " ",
-                      end="\r", flush=True)
-                db.Commit()
-                updatetime = time.time() + .1
-            
-        #file info
-        db.SetFileData(fid=bhlfileid, fblocksize=blocksize, fsize=filesize,
-                       fname=metadata["filename"],
-                       fdatetime=metadata["filedatetime"],
-                       flastblock=lastblockbuffer,
-                       fhash=globalhash.digest())
+        if not cmdline.test:
+            print("updating db...")
+            updatetime = time.time()
+            i = 0
+            for digest in blocklist:
+                for pos in blocklist[digest]:
+                    db.AddHash(fhash=digest, fid=bhlfileid, fnum=pos)
+                i+= 1
+                #some progress update
+                if time.time() > updatetime:
+                    print("%.1f%%" % (i*100.0/len(blocklist)), " ",
+                          end="\r", flush=True)
+                    db.Commit()
+                    updatetime = time.time() + .1
+                
+            #file info
+            db.SetFileData(fid=bhlfileid, fblocksize=blocksize, fsize=filesize,
+                           fname=metadata["filename"],
+                           fdatetime=metadata["filedatetime"],
+                           flastblock=lastblockbuffer,
+                           fhash=globalhash.digest())
         bhlfileid +=1
 
+    if cmdline.test:
+        print("BHL file(s) OK!")
+        errexit(0)
 
-    #this list need to include all block sizes...
+    #select an adequate scan step
     maxblocksize = max(sizelist)
     scanstep = cmdline.step
     if scanstep == 0:
         scanstep = mcd(sizelist)
     print("scan step:", scanstep)
+    offset = cmdline.offset
+
+    #build list of image files to process
+    imgfilenames = []
+    for filename in cmdline.imgfilename:
+        if os.path.isdir(filename):
+            filename = os.path.join(filename, "*")
+        imgfilenames += glob.glob(filename)
+    imgfilenames = [filename for filename in imgfilenames
+                    if not os.path.isdir(filename)]
+    imgfilenames = sorted(set(imgfilenames))
 
     #start scanning process...
     blocksfound = 0
-    for imgfileid in range(len(cmdline.imgfilename)):
-        imgfilename = cmdline.imgfilename[imgfileid]
+    for imgfileid in range(len(imgfilenames)):
+        imgfilename = imgfilenames[imgfileid]
         if not os.path.exists(imgfilename):
             errexit(1, "image file/volume '%s' not found" % (imgfilename))
         imgfilesize = getFileSize(imgfilename)
@@ -318,7 +338,7 @@ def main():
         writelist = {}
         docommit = False
 
-        for pos in range(0, imgfilesize, scanstep):
+        for pos in range(offset, imgfilesize, scanstep):
             fin.seek(pos, 0)
             buffer = fin.read(maxblocksize)
             if len(buffer) > 0:
@@ -360,8 +380,8 @@ def main():
 
     #open all the sources
     finlist = {}
-    for imgfileid in range(len(cmdline.imgfilename)):
-        finlist[imgfileid] = open(cmdline.imgfilename[imgfileid], "rb")
+    for imgfileid in range(len(imgfilenames)):
+        finlist[imgfileid] = open(imgfilenames[imgfileid], "rb")
 
     #start rebuilding files...
     for fid in range(len(bhlfilenames)):
