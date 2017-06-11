@@ -32,7 +32,7 @@ import zlib
 import sqlite3
 import glob
 
-PROGRAM_VER = "0.7.16b"
+PROGRAM_VER = "0.7.17b"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -188,6 +188,9 @@ def main():
     globalblocksnum = 0
     bhlfileid = 0
     sizelist = []
+
+    if not len(cmdline.imgfilename) and not cmdline.test:
+        errexit(1, "no image file/volume specified!")        
 
     #build list of BHL files to process
     bhlfilenames = []

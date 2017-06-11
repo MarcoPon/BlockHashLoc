@@ -1,22 +1,20 @@
 # BlockHashLoc
 
+The purpose of BlockHashLoc is to enable the recovery of files after total loss of the file system structure, or without even knowing what File System was used in the first place.
 
-(to be completed...)
+The way it can recover a given file is by keeping a (small) parallel BHL file with the crypto-hash of all the blocks (of selectable size) that compose it. So that it's possible to read the blocks of a (set of) disk image(s)/volume(s), calculate the hashes and compare with the saved ones. 
 
-tl;dr
+With adequately sized blocks (512 bytes, 4KB, etc. depending on the media and File System), this let one recover a file regardless of the FS used, or the FS integrity, or the fragmentation level.
 
- - BHLMake: create a BHL with a list of one hash for every block of a given file
- - BHLReco: scan a disk image/volume for blocks with the hashes from the BHL file to rebuild the original one
-
-With adequately sized blocks (512 bytes, 4KB, etc. depending on the media and file system), this let one recover a file regardless of the FS used, or the FS integrity, or the fragmentation level.
-
-This project is related to [SeqBox](https://github.com/MarcoPon/SeqBox). The differences are:
+This project is related to [SeqBox](https://github.com/MarcoPon/SeqBox). The main differences are:
 
 - SeqBox create a stand-alone file container with the above listed recovery characteristics.
  
-- BHL realize the same effect with a parallel (small) file, that can be stored separately (in other media, or in the cloud), or along the original as a SeqBox file (so that it can be recovered too, as the first step).
+- BHL realize the same effect with a (small) parallel file, that can be stored separately (in other media, or in the cloud), or along the original as a SeqBox file (so that it can be recovered too, as the first step), so it can be used to add a degree of recoverability to existing files.
 
-***
+**N.B.**
+
+The tools are still in beta, but they are already functional and the BHL file format is considered final.
 
 ## Demo tour
 
@@ -26,7 +24,7 @@ BlockHashLoc is composed of two separate tools:
   
 There are in some case many parameters but the default are sensible so it's generally pretty simple.
 
-Now to a practical example: let's see how 2 photos can be recovered from a fragmented floppy disk that have lost its FAT (and any other system part). The 2 JPEGs weight about 450KB and 680KB:
+Here's a practical example. Let's see how 2 photos can be recovered from a fragmented floppy disk that have lost its FAT (and any other system section). The 2 JPEGs weight about 450KB and 680KB:
 
 ![Manu01](http://i.imgur.com/QKxgT5r.jpg) ![Manu02](http://i.imgur.com/jfQLlx1.jpg)
 
@@ -46,13 +44,13 @@ BHL file(s) OK!
 
 ```
 
-Now we put both the JPEGs in a floppy disk image that have gone trough various cycles of files updating and deleting. At this point the BHL files could be kept somewhere else (another disk media, online storage, etc.). Or put in the same image after being encoded in one or more [SeqBox](https://github.com/MarcoPon/SeqBox) recoverable container(s) - because, obviously, there's no use in making BHL files if they can be lost too.
+Now we put both the JPEGs in a floppy disk image that have gone trough various cycles of files updating and deleting. At this point the BHL files could be kept somewhere else (another disk, some online storage, etc.), or put in the same disk image after being encoded in one or more [SeqBox](https://github.com/MarcoPon/SeqBox) recoverable container(s) - because, obviously, there's no use in making BHL files if they can be lost too.
 As a result the data is laid out like this:
 
 ![Disk Layout](http://i.imgur.com/3MUOAjk.png)
 
 The photos are in green, and the two SBX files in blue.
-Then with an hex editor with zap the first system sectors and the FAT (in red), making the disk image unreadable!
+Then with an hex editor we zap the first system sectors and the FAT (in red), making the disk image unreadable!
 Time for recovery!
 
 We start with the free (GPLV v2+) [PhotoRec](http://www.cgsecurity.org/wiki/PhotoRec), which is the go-to tool for these kind of jobs. Parameters are set to "Paranoid : YES (Brute force enabled)" & "Keep corrupted files : Yes", to search the entire data area. 
@@ -60,17 +58,17 @@ As the files are fragmented, we know we can't expect miracles. The starting sect
 
 ![PhotoRec results](http://i.imgur.com/y9phKLX.png)
 
-As expected, something has been recovered. But the 2 files size are off (32K and 340KB). The very first parts of the photos are OK, but then they degrade quickly as other random blocks of data where mixed in. We have all seen JPEGs ending up like this:
+As expected, something has been recovered. But the 2 files sizes are off (32K and 340KB). The very first parts of the photos are OK, but then they degrade quickly as other random blocks of data where mixed in. We have all seen JPEGs ending up like this:
 
-![Manu01](http://i.imgur.com/bCtYJpW.jpg) ![Manu02](http://i.imgur.com/mH126s4.jpg)
+![Manu01](http://i.imgur.com/bCtYJpW.jpg) ![Manu02](http://i.imgur.com/EmOid42.jpg)
 
 Other popular recovery tools lead to the same results. It's not anyone fault: it's just not possible to know how the various fragment are concatenated, without an index or some kind of list (there are approaches based on file type validators that can in at least some cases differentiate between spurious and *valid* blocks, but that's beside the point).
 
-But having the BHL files at hand, it's a different story. Each one of the hashed blocks can't be fragmented more, and can be located anywhere in the disk just by calculating the hash of every blocks until all matching ones are found. 
+But having the BHL files at hand, it's a different story. Each of the blocks referenced in the BHL files can't be fragmented, and they all can be located anywhere in the disk just by calculating the hash of every blocks until all matching ones are found. 
 
-So, as a first thing we get the BHL files, either by getting them from some alternate storage, or recovering the [SeqBox](https://github.com/MarcoPon/SeqBox) containers from the same disk image and extracting them.
+So, the first thing we need is to obtain the BHL files, either by getting them from some alternate storage, or recovering the [SeqBox](https://github.com/MarcoPon/SeqBox) containers from the same disk image and extracting them.
 
-Then, we run BHLReco to begin the recovery process:
+Then we can run BHLReco and begin the scanning process:
 
 ```
 c:\t>bhlreco disk.IMA -bhl *.bhl
@@ -91,8 +89,8 @@ hash match!
 files restored: 2 - with errors: 0 - files missing: 0
 ```
 
-All files, have been recovered, with no errors. 
-Quick visual check:
+All files have been recovered, with no errors!
+Time for a quick visual check:
 
 ![Manu01](http://i.imgur.com/qEB9wBQ.jpg) ![Manu02](http://i.imgur.com/s6spyFq.jpg)
 
