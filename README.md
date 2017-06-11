@@ -2,7 +2,7 @@
 
 The purpose of BlockHashLoc is to enable the recovery of files after total loss of the file system structure, or without even knowing what File System was used in the first place.
 
-The way it can recover a given file is by keeping a (small) parallel BHL file with the crypto-hash of all the blocks (of selectable size) that compose it. So that it's possible to read the blocks of a (set of) disk image(s)/volume(s), calculate the hashes and compare with the saved ones. 
+The way it can recover a given file is by keeping a (small) parallel BHL file with a list of crypto-hash of all the blocks (of selectable size) that compose it. So it's possible to read the blocks of a (set of) disk image(s)/volume(s), calculate their hashes, compare with the saved ones and rebuild the original file. 
 
 With adequately sized blocks (512 bytes, 4KB, etc. depending on the media and File System), this let one recover a file regardless of the FS used, or the FS integrity, or the fragmentation level.
 
@@ -14,7 +14,7 @@ This project is related to [SeqBox](https://github.com/MarcoPon/SeqBox). The mai
 
 **N.B.**
 
-The tools are still in beta, but they are already functional and the BHL file format is considered final.
+The tools are still in beta and surely not speed optimized, but they are already functional and the BHL file format is considered final.
 
 ## Demo tour
 
