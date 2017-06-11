@@ -32,7 +32,7 @@ import zlib
 import sqlite3
 import glob
 
-PROGRAM_VER = "0.7.15b"
+PROGRAM_VER = "0.7.16b"
 BHL_VER = 1
 BHL_MAGIC = b"BlockHashLoc\x1a"
 
@@ -52,7 +52,7 @@ def get_cmdline():
                         help="temporary db with recovery info",
                         default=":memory:")
     parser.add_argument("-bhl", action="store", nargs="+", dest="bhlfilename", 
-                        help="BHL file(s)", metavar="filename")
+                        help="BHL file(s)", metavar="filename", required=True)
     parser.add_argument("-d", action="store", dest="destpath",
                         help="destination path", default="", metavar="path")
     parser.add_argument("-o", "--offset", type=int, default=0,
@@ -203,12 +203,13 @@ def main():
         errexit(1, "no BHL file(s) found!")
 
     #prepare database
-    dbfilename = cmdline.dbfilename
-    print("creating '%s' database..." % (dbfilename))
-    if dbfilename.upper() != ":MEMORY:":
-        open(dbfilename, 'w').close()
-    db = RecDB(dbfilename)
-    db.CreateTables()
+    if not cmdline.test:
+        dbfilename = cmdline.dbfilename
+        print("creating '%s' database..." % (dbfilename))
+        if dbfilename.upper() != ":MEMORY:":
+            open(dbfilename, 'w').close()
+        db = RecDB(dbfilename)
+        db.CreateTables()
 
     #process all BHL files
     for bhlfilename in bhlfilenames:
