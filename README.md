@@ -1,8 +1,8 @@
 # BlockHashLoc
 
-The purpose of BlockHashLoc is to enable the recovery of files after total loss of the file system structure, or without even knowing what File System was used in the first place.
+The purpose of BlockHashLoc is to enable the recovery of files after total loss of File System structure, or without even knowing what FS was used in the first place.
 
-The way it can recover a given file is by keeping a (small) parallel BHL file with a list of crypto-hash of all the blocks (of selectable size) that compose it. So it's possible to read the blocks of a (set of) disk image(s)/volume(s), calculate their hashes, compare with the saved ones and rebuild the original file. 
+The way it can recover a given file is by keeping a (small) parallel BHL file with a list of crypto-hashes of all the blocks (of selectable size) that compose it. So it's then possible to read blocks from a disk image/volume, calculate their hashes, compare them with the saved ones and rebuild the original file. 
 
 With adequately sized blocks (512 bytes, 4KB, etc. depending on the media and File System), this let one recover a file regardless of the FS used, or the FS integrity, or the fragmentation level.
 
@@ -19,7 +19,7 @@ The tools are still in beta and surely not speed optimized, but they are already
 ## Demo tour
 
 BlockHashLoc is composed of two separate tools:
- - BHLMake: create BHL files 
+ - BHLMake: create BHL files with block-hashes and metadata
  - BHLReco: recover files searching for the block's hashes contained in a set of BHL files
   
 There are in some case many parameters but the default are sensible so it's generally pretty simple.
