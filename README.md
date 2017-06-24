@@ -1,6 +1,6 @@
 # BlockHashLoc
 
-The purpose of BlockHashLoc is to enable the recovery of files after total loss of File System structure, or without even knowing what FS was used in the first place.
+The purpose of BlockHashLoc is to enable the recovery of files after total loss of File System structures, or without even knowing what FS was used in the first place.
 
 The way it can recover a given file is by keeping a (small) parallel BHL file with a list of crypto-hashes of all the blocks (of selectable size) that compose it. So it's then possible to read blocks from a disk image/volume, calculate their hashes, compare them with the saved ones and rebuild the original file. 
 
