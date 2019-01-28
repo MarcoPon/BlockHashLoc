@@ -121,13 +121,13 @@ Hash: SHA-256
 |  0  |     12 |  13  | Signature = 'BlockHashLoc' + 0x1a |
 | 13  |     13 |   1  | Version byte                      |
 | 14  |     17 |   4  | Block size                        |
-| 18  |     24 |   8  | File size                         |
+| 18  |     25 |   8  | File size                         |
 
 ### Metadata
 
 | pos | to pos | size | desc                  |
 |---- | ------ | ---- | --------------------- |
-| 26  |     28 |   4  | Metadata section size |
+| 26  |     29 |   4  | Metadata section size |
 | 30  |    var |  var | Encoded metadata list |
 
 ### Hash
