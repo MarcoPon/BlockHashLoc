@@ -120,7 +120,7 @@ Hash: SHA-256
 |---- | ---    | ---- | --------------------------------- |
 |  0  |     12 |  13  | Signature = 'BlockHashLoc' + 0x1a |
 | 13  |     13 |   1  | Version byte                      |
-| 14  |     16 |   4  | Block size                        |
+| 14  |     17 |   4  | Block size                        |
 | 18  |     24 |   8  | File size                         |
 
 ### Metadata
